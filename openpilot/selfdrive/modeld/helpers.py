@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import pickle
 import shutil
 import struct
@@ -11,13 +12,22 @@ from openpilot.common.hardware.usb import CHESTNUT_FW_VERSION, CHESTNUT_USB_IDS,
 
 MODELS_DIR = Path(__file__).resolve().parent / 'models'
 TG_INPUT_DEVICES_PATH = MODELS_DIR / 'tg_input_devices.json'
+SIM_CUDA_MODEL_PATH = MODELS_DIR / 'sim_cuda_driving_tinygrad.pkl'
+
+
+def sim_cuda_enabled() -> bool:
+  return os.getenv('SIMULATION') == '1' and os.getenv('SIM_TINYGRAD_DEVICE') == 'CUDA' and SIM_CUDA_MODEL_PATH.is_file()
 
 
 def get_tg_input_devices(process_name: str, usbgpu: bool):
+  if process_name == 'openpilot.selfdrive.modeld.modeld' and not usbgpu and sim_cuda_enabled():
+    return {'WARP_DEV': 'CUDA', 'QUEUE_DEV': 'CUDA'}
   with open(TG_INPUT_DEVICES_PATH) as f:
     return json.load(f)[process_name]['default' if not usbgpu else 'usbgpu']
 
 def modeld_pkl_path(usbgpu: bool):
+  if not usbgpu and sim_cuda_enabled():
+    return SIM_CUDA_MODEL_PATH
   prefix = 'big_' if usbgpu else ''
   return MODELS_DIR / f'{prefix}driving_tinygrad.pkl'
 

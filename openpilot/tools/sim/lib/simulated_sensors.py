@@ -54,6 +54,10 @@ class SimulatedSensors:
         "verticalAccuracy": 1.0,
         "speedAccuracy": 0.1,
         "bearingAccuracyDeg": 0.1,
+        # locationd uses this explicit field; flags alone are not interpreted
+        # by the Python bridge like they are by the ublox decoder.
+        "hasFix": True,
+        "satelliteCount": 12,
         "vNED": velNED,
         "bearingDeg": simulator_state.imu.bearing,
         "latitude": simulator_state.gps.latitude,

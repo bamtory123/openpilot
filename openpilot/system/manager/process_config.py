@@ -55,6 +55,15 @@ def always_run(started: bool, params: Params, CP: car.CarParams) -> bool:
 def only_onroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return started
 
+
+def modeld_process():
+  # tinygrad CUDA is not fork-safe under WSL. The simulator uses an exec-based
+  # launcher so modeld receives a fresh CUDA context; production keeps the
+  # upstream PythonProcess behavior.
+  if os.getenv("SIMULATION") == "1":
+    return NativeProcess("modeld", ".", ["python3", "-m", "openpilot.selfdrive.modeld.modeld"], only_onroad)
+  return PythonProcess("modeld", "openpilot.selfdrive.modeld.modeld", only_onroad)
+
 def only_offroad(started: bool, params: Params, CP: car.CarParams) -> bool:
   return not started
 
@@ -82,7 +91,7 @@ procs = [
   PythonProcess("micd", "openpilot.system.micd", iscar),
   PythonProcess("timed", "openpilot.system.timed", always_run, enabled=not PC),
 
-  PythonProcess("modeld", "openpilot.selfdrive.modeld.modeld", only_onroad),
+  modeld_process(),
   PythonProcess("dmonitoringmodeld", "openpilot.selfdrive.modeld.dmonitoringmodeld", driverview, enabled=(WEBCAM or not PC)),
 
   PythonProcess("sensord", "openpilot.system.sensord.sensord", only_onroad, enabled=not PC),

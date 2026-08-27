@@ -1,7 +1,6 @@
 import math
 from multiprocessing import Queue
 
-from metadrive.component.sensors.base_camera import _cuda_enable
 from metadrive.component.map.pg_map import MapGenerateMethod
 
 from openpilot.tools.sim.bridge.common import SimulatorBridge
@@ -73,7 +72,9 @@ class MetaDriveBridge(SimulatorBridge):
         "image_source": "rgb_road",
       },
       "sensors": sensors,
-      "image_on_cuda": _cuda_enable,
+      # Keep simulator images in host memory. Under WSL, MetaDrive's CUDA image
+      # path and tinygrad modeld sharing the RTX can poison the CUDA context.
+      "image_on_cuda": False,
       "image_observation": True,
       "interface_panel": [],
       "out_of_route_done": False,

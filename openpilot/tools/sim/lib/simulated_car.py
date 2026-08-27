@@ -66,7 +66,11 @@ class SimulatedCar:
                                     }))
     msg.append(self.packer.make_can_msg("POWERTRAIN_DATA", 0,
                                     {
-                                    "ACC_STATUS": int(simulator_state.is_engaged),
+                                    # HONDA_CIVIC_2022 runs openpilot longitudinal control in
+                                    # this simulator. Advertising a simultaneously enabled
+                                    # stock PCM ACC causes selfdrived's cruiseMismatch safety
+                                    # event, even though no stock ACC exists in CARLA.
+                                    "ACC_STATUS": 0,
                                     "PEDAL_GAS": simulator_state.user_gas,
                                     "BRAKE_PRESSED": simulator_state.user_brake > 0
                                     }))
