@@ -69,9 +69,9 @@ class SimulatorBridge(ABC):
   def shutdown(self):
     self._keep_alive = False
 
-  def bridge_keep_alive(self, q: Queue, retries: int):
+  def bridge_keep_alive(self, control_q: Queue, status_q: Queue, retries: int):
     try:
-      self._run(q)
+      self._run(control_q, status_q)
     finally:
       self.close("bridge terminated")
 
@@ -84,8 +84,11 @@ class SimulatorBridge(ABC):
     if self.world is not None:
       self.world.close(reason)
 
-  def run(self, queue, retries=-1):
-    bridge_p = Process(name="bridge", target=self.bridge_keep_alive, args=(queue, retries))
+  def run(self, control_queue, retries=-1, status_queue=None):
+    # Keep the historical single-queue API by default, but allow experiment
+    # runners to prevent the bridge from consuming its own telemetry.
+    status_queue = control_queue if status_queue is None else status_queue
+    bridge_p = Process(name="bridge", target=self.bridge_keep_alive, args=(control_queue, status_queue, retries))
     bridge_p.start()
     return bridge_p
 
@@ -100,8 +103,8 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
   def spawn_world(self, q: Queue, /) -> World:
     pass
 
-  def _run(self, q: Queue):
-    self.world = self.spawn_world(q)
+  def _run(self, control_q: Queue, status_q: Queue):
+    self.world = self.spawn_world(status_q)
 
     self.simulated_car = SimulatedCar()
     camera_fault = self.simlab_config.get("fault", {})
@@ -137,8 +140,8 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       throttle_manual = steer_manual = brake_manual = 0.
 
       # Read manual controls
-      if not q.empty():
-        message = q.get()
+      if not control_q.empty():
+        message = control_q.get()
         if message.type == QueueMessageType.CONTROL_COMMAND:
           m = message.info.split('_')
           if m[0] == "steer":
@@ -179,6 +182,13 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
 
       self.simulated_car.sm.update(0)
       self.simulator_state.is_engaged = self.simulated_car.sm['selfdriveState'].active
+
+      if self.rk.frame % 10 == 0:
+        status_q.put(QueueMessage(QueueMessageType.TELEMETRY, {
+          "type": "openpilot_state", "frame": self.rk.frame,
+          "engageable": bool(self.simulated_car.sm['selfdriveState'].engageable),
+          "engaged": bool(self.simulator_state.is_engaged),
+        }))
 
       if self.simulator_state.is_engaged:
         throttle_op = np.clip(self.simulated_car.sm['carControl'].actuators.accel / 1.6, 0.0, 1.0)
