@@ -189,7 +189,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           "type": "openpilot_state", "frame": self.rk.frame,
           "engageable": bool(selfdrive_state.engageable),
           "engaged": bool(self.simulator_state.is_engaged),
-          "state": int(selfdrive_state.state), "alert_text_1": selfdrive_state.alertText1,
+          "state": str(selfdrive_state.state), "alert_text_1": selfdrive_state.alertText1,
           "alert_text_2": selfdrive_state.alertText2,
         }))
 
