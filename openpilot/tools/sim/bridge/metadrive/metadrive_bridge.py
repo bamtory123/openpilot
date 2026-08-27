@@ -93,5 +93,12 @@ class MetaDriveBridge(SimulatorBridge):
 
     # Only fields implemented by the bridge are exposed to the simulator.
     config["simlab"] = self.simlab_config
+    seed = self.simlab_config.get("environment", {}).get("seed")
+    if seed is not None:
+      # MetaDrive 0.4.2.3 treats reset(seed=...) as a scenario index and
+      # rejects arbitrary integers. start_seed fixes the generated scenario
+      # while preserving the normal reset lifecycle.
+      config["start_seed"] = int(seed)
+      config["num_scenarios"] = 1
 
     return MetaDriveWorld(queue, config, self.test_duration, self.test_run, self.dual_camera)

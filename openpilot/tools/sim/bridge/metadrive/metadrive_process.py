@@ -97,10 +97,9 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return result
 
   def reset():
-    if seed is None:
-      env.reset()
-    else:
-      env.reset(seed=int(seed))
+    # The fixed seed is configured as MetaDrive's start_seed. Passing it to
+    # reset() would be interpreted as a bounded scenario index on 0.4.2.3.
+    env.reset()
     env.vehicle.config["max_speed_km_h"] = 1000
     lane_idx_prev, _ = get_current_lane_info(env.vehicle)
 
