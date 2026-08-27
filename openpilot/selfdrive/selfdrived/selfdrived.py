@@ -378,7 +378,8 @@ class SelfdriveD:
     no_system_errors = (not has_disable_events) or (len(self.events) == num_events)
     warmup_sec = 5.
     big_model_settling = self.big_model_loading or time.monotonic() < self.big_model_ready_t + warmup_sec
-    if not self.sm.all_checks() and no_system_errors and not big_model_settling:  # the load holds modelV2 and friends back on purpose
+    checks_ok = self.sm.all_alive() if SIMULATION else self.sm.all_checks()
+    if not checks_ok and no_system_errors and not big_model_settling:  # the load holds modelV2 and friends back on purpose
       if not self.sm.all_alive():
         self.events.add(EventName.commIssue)
       elif not self.sm.all_freq_ok():
