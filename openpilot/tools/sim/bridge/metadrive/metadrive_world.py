@@ -32,6 +32,7 @@ class MetaDriveWorld(World):
     self.op_engaged = multiprocessing.Event()
 
     self.test_run = test_run
+    self.ready_timeout_s = float(config.get("simlab", {}).get("run", {}).get("wait_ready_timeout_s", 60))
 
     self.first_engage = None
     self.last_check_timestamp = 0
@@ -50,6 +51,11 @@ class MetaDriveWorld(World):
     print("---- Spawning Metadrive world, this might take awhile ----")
     print("----------------------------------------------------------")
 
+    if not self.vehicle_state_recv.poll(self.ready_timeout_s):
+      self.exit_event.set()
+      self.metadrive_process.terminate()
+      self.metadrive_process.join(timeout=10)
+      raise RuntimeError(f"MetaDrive did not emit an initial vehicle state within {self.ready_timeout_s}s")
     self.vehicle_last_pos = self.vehicle_state_recv.recv().position # wait for a state message to ensure metadrive is launched
     self.status_q.put(QueueMessage(QueueMessageType.START_STATUS, "started"))
 
