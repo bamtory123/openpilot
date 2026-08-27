@@ -71,6 +71,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return lane_idx, on_lane
 
   def reference_lane_telemetry(vehicle, simulation_frame, simulation_time_s, acceleration_mps2):
+    vehicle_width = float(vehicle.config.get("width") or 2.0)
     lanes = list(getattr(vehicle.navigation, "current_ref_lanes", []) or [])
     lane = lanes[reference_lane_index] if 0 <= reference_lane_index < len(lanes) else None
     lane_idx, on_lane = get_current_lane_info(vehicle)
@@ -81,13 +82,13 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "reference_lane_index": reference_lane_index, "current_lane_index": lane_idx,
       "metadrive_on_lane": bool(on_lane), "reference_road_id": None,
       "route_progress_m": None, "lateral_error_m": None, "heading_error_rad": None,
-      "lane_width_m": None, "vehicle_width_m": float(vehicle.config.get("width", 2.0)),
+      "lane_width_m": None, "vehicle_width_m": vehicle_width,
       "lane_departure": False, "collision": bool(getattr(vehicle, "crash_vehicle", False) or getattr(vehicle, "crash_object", False)),
     }
     if lane is None:
       return result
     longitudinal, lateral = lane.local_coordinates(vehicle.position)
-    lane_width = float(getattr(lane, "width", vehicle.config.get("width", 2.0)))
+    lane_width = float(getattr(lane, "width", None) or vehicle_width)
     heading_error = (float(vehicle.heading_theta) - float(lane.heading_theta_at(longitudinal)) + math.pi) % (2 * math.pi) - math.pi
     result.update({
       "reference_road_id": str(getattr(lane, "index", (None,))[0]), "route_progress_m": float(longitudinal),
