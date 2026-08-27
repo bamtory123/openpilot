@@ -52,13 +52,15 @@ class Camerad:
 
     self.vipc_server.start_listener()
 
-  def cam_send_yuv_road(self, yuv):
-    self._send_yuv(yuv, self.frame_road_id, 'narrowRoadCameraState', VisionStreamType.VISION_STREAM_NARROW_ROAD)
-    self.frame_road_id += 1
+  def cam_send_yuv_road(self, yuv, source_frame_id=None, capture_mono_ns=None):
+    frame_id = self.frame_road_id if source_frame_id is None else source_frame_id
+    self._send_yuv(yuv, frame_id, 'narrowRoadCameraState', VisionStreamType.VISION_STREAM_NARROW_ROAD, capture_mono_ns)
+    self.frame_road_id = max(self.frame_road_id, frame_id + 1)
 
-  def cam_send_yuv_wide_road(self, yuv):
-    self._send_yuv(yuv, self.frame_wide_id, 'wideRoadCameraState', VisionStreamType.VISION_STREAM_WIDE_ROAD)
-    self.frame_wide_id += 1
+  def cam_send_yuv_wide_road(self, yuv, source_frame_id=None, capture_mono_ns=None):
+    frame_id = self.frame_wide_id if source_frame_id is None else source_frame_id
+    self._send_yuv(yuv, frame_id, 'wideRoadCameraState', VisionStreamType.VISION_STREAM_WIDE_ROAD, capture_mono_ns)
+    self.frame_wide_id = max(self.frame_wide_id, frame_id + 1)
 
   def rgb_to_yuv(self, rgb):
     """Convert RGB to NV12 YUV format."""
@@ -66,10 +68,10 @@ class Camerad:
     assert rgb.dtype == np.uint8
     return rgb_to_nv12(rgb)
 
-  def _send_yuv(self, yuv, frame_id, pub_type, yuv_type):
+  def _send_yuv(self, yuv, frame_id, pub_type, yuv_type, capture_mono_ns=None):
     # locationd compares cameraOdometry.timestampEof against IMU timestamps.
     # Use the same monotonic clock rather than a frame counter relative to zero.
-    eof = time.monotonic_ns()
+    eof = time.monotonic_ns() if capture_mono_ns is None else capture_mono_ns
     self.vipc_server.send(yuv_type, yuv, frame_id, eof, eof)
 
     dat = messaging.new_message(pub_type, valid=True)

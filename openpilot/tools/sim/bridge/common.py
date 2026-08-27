@@ -1,6 +1,7 @@
 import signal
 import threading
 import functools
+import time
 import numpy as np
 
 from collections import namedtuple
@@ -37,7 +38,7 @@ def rk_loop(function, hz, exit_event: threading.Event):
 class SimulatorBridge(ABC):
   TICKS_PER_FRAME = 5
 
-  def __init__(self, dual_camera, high_quality):
+  def __init__(self, dual_camera, high_quality, simlab_config=None):
     set_params_enabled()
     self.params = Params()
     self.params.put_bool("AlphaLongitudinalEnabled", True, block=True)
@@ -46,6 +47,7 @@ class SimulatorBridge(ABC):
 
     self.dual_camera = dual_camera
     self.high_quality = high_quality
+    self.simlab_config = simlab_config or {}
 
     self._exit_event: threading.Event | None = None
     self._threads = []
@@ -102,7 +104,9 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
     self.world = self.spawn_world(q)
 
     self.simulated_car = SimulatedCar()
-    self.simulated_sensors = SimulatedSensors(self.dual_camera)
+    camera_fault = self.simlab_config.get("fault", {})
+    camera_sink = getattr(self.world, "emit_camera_telemetry", None)
+    self.simulated_sensors = SimulatedSensors(self.dual_camera, camera_fault, camera_sink)
 
     self._exit_event = threading.Event()
 
@@ -118,6 +122,10 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
     for _ in range(20):
       self.world.tick()
 
+    fault_enabled = False
+    measurement_announced = False
+    fault_enabled_at = None
+    fault_settle_s = float(self.simlab_config.get("run", {}).get("fault_settle_s", 5))
     while self._keep_alive:
       throttle_out = steer_out = brake_out = 0.0
       throttle_op = steer_op = brake_op = 0.0
@@ -186,6 +194,21 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       brake_out = brake_op if self.simulator_state.is_engaged else brake_manual
       steer_out = steer_op if self.simulator_state.is_engaged else steer_manual
 
+      if hasattr(self.world, "set_control_telemetry"):
+        self.world.set_control_telemetry(steer_op, self.simulated_car.sm['carControl'].actuators.accel if self.simulator_state.is_engaged else 0.0,
+                                         steer_out, throttle_out, brake_out)
+
+      if self.simulator_state.is_engaged and not fault_enabled:
+        self.simulated_sensors.enable_camera_transport_fault(True)
+        fault_enabled = True
+        fault_enabled_at = time.monotonic()
+        if hasattr(self.world, "emit_run_event"):
+          self.world.emit_run_event("ENABLE_FAULT")
+      if fault_enabled and not measurement_announced and fault_enabled_at is not None and time.monotonic() - fault_enabled_at >= fault_settle_s:
+        measurement_announced = True
+        if hasattr(self.world, "emit_run_event"):
+          self.world.emit_run_event("MEASURE")
+
       self.world.apply_controls(steer_out, throttle_out, brake_out)
       self.world.read_state()
       self.world.read_sensors(self.simulator_state)
@@ -204,3 +227,5 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       self.started.value = True
 
       self.rk.keep_time()
+
+    self.simulated_sensors.close()

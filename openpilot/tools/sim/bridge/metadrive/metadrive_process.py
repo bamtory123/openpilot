@@ -21,7 +21,7 @@ C3_HPR = Vec3(0, 0,0)
 
 
 metadrive_simulation_state = namedtuple("metadrive_simulation_state", ["running", "done", "done_info"])
-metadrive_vehicle_state = namedtuple("metadrive_vehicle_state", ["velocity", "position", "bearing", "steering_angle"])
+metadrive_vehicle_state = namedtuple("metadrive_vehicle_state", ["velocity", "position", "bearing", "steering_angle", "ground_truth"])
 
 def apply_metadrive_patches(arrive_dest_done=True):
   # By default, metadrive won't try to use cuda images unless it's used as a sensor for vehicles, so patch that in
@@ -52,6 +52,10 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
                       controls_recv: Connection, simulation_state_send: Connection, vehicle_state_send: Connection,
                       exit_event, op_engaged, test_duration, test_run):
   arrive_dest_done = config.pop("arrive_dest_done", True)
+  simlab_config = config.pop("simlab", {})
+  environment_config = simlab_config.get("environment", {})
+  reference_lane_index = int(environment_config.get("reference_lane_index", 0))
+  seed = environment_config.get("seed")
   apply_metadrive_patches(arrive_dest_done)
 
   road_image = np.frombuffer(camera_array.get_obj(), dtype=np.uint8).reshape((H, W, 3))
@@ -66,8 +70,37 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     lane_idx = lane_info[2] if lane_info is not None else None
     return lane_idx, on_lane
 
+  def reference_lane_telemetry(vehicle, simulation_frame, simulation_time_s, acceleration_mps2):
+    lanes = list(getattr(vehicle.navigation, "current_ref_lanes", []) or [])
+    lane = lanes[reference_lane_index] if 0 <= reference_lane_index < len(lanes) else None
+    lane_idx, on_lane = get_current_lane_info(vehicle)
+    result = {
+      "type": "vehicle_telemetry", "simulation_frame": simulation_frame, "simulation_time_s": simulation_time_s,
+      "position_x_m": float(vehicle.position[0]), "position_y_m": float(vehicle.position[1]),
+      "speed_mps": float(np.linalg.norm(vehicle.velocity)), "acceleration_mps2": acceleration_mps2,
+      "reference_lane_index": reference_lane_index, "current_lane_index": lane_idx,
+      "metadrive_on_lane": bool(on_lane), "reference_road_id": None,
+      "route_progress_m": None, "lateral_error_m": None, "heading_error_rad": None,
+      "lane_width_m": None, "vehicle_width_m": float(vehicle.config.get("width", 2.0)),
+      "lane_departure": False, "collision": bool(getattr(vehicle, "crash_vehicle", False) or getattr(vehicle, "crash_object", False)),
+    }
+    if lane is None:
+      return result
+    longitudinal, lateral = lane.local_coordinates(vehicle.position)
+    lane_width = float(getattr(lane, "width", vehicle.config.get("width", 2.0)))
+    heading_error = (float(vehicle.heading_theta) - float(lane.heading_theta_at(longitudinal)) + math.pi) % (2 * math.pi) - math.pi
+    result.update({
+      "reference_road_id": str(getattr(lane, "index", (None,))[0]), "route_progress_m": float(longitudinal),
+      "lateral_error_m": float(lateral), "heading_error_rad": heading_error, "lane_width_m": lane_width,
+      "lane_departure": abs(float(lateral)) > max(0.0, (lane_width - result["vehicle_width_m"]) / 2),
+    })
+    return result
+
   def reset():
-    env.reset()
+    if seed is None:
+      env.reset()
+    else:
+      env.reset(seed=int(seed))
     env.vehicle.config["max_speed_km_h"] = 1000
     lane_idx_prev, _ = get_current_lane_info(env.vehicle)
 
@@ -82,6 +115,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
   lane_idx_prev = reset()
   start_time = None
+  previous_speed = 0.0
 
   def get_cam_as_rgb(cam):
     cam = env.engine.sensors[cam]
@@ -99,11 +133,16 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   vc = [0,0]
 
   while not exit_event.is_set():
+    speed_mps = float(np.linalg.norm(env.vehicle.velocity))
+    acceleration_mps2 = (speed_mps - previous_speed) * 100
+    previous_speed = speed_mps
+    ground_truth = reference_lane_telemetry(env.vehicle, rk.frame, rk.frame / 100, acceleration_mps2)
     vehicle_state = metadrive_vehicle_state(
       velocity=vec3(x=float(env.vehicle.velocity[0]), y=float(env.vehicle.velocity[1]), z=0),
       position=env.vehicle.position,
       bearing=float(math.degrees(env.vehicle.heading_theta)),
-      steering_angle=env.vehicle.steering * env.vehicle.MAX_STEERING
+      steering_angle=env.vehicle.steering * env.vehicle.MAX_STEERING,
+      ground_truth=ground_truth,
     )
     vehicle_state_send.send(vehicle_state)
 

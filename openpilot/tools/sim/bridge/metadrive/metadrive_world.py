@@ -57,6 +57,22 @@ class MetaDriveWorld(World):
     self.vc = [0.0,0.0]
     self.reset_time = 0
     self.should_reset = False
+    self._control_telemetry = {}
+
+  def emit_camera_telemetry(self, payload):
+    self.status_q.put(QueueMessage(QueueMessageType.TELEMETRY, payload))
+
+  def emit_run_event(self, state):
+    self.status_q.put(QueueMessage(QueueMessageType.TELEMETRY, {"type": "run_state", "state": state, "mono_ns": time.monotonic_ns()}))
+
+  def set_control_telemetry(self, steering_cmd_deg, accel_cmd_mps2, applied_steering_deg, applied_throttle, applied_brake):
+    self._control_telemetry = {
+      "op_steering_angle_cmd_deg": steering_cmd_deg,
+      "op_accel_cmd_mps2": accel_cmd_mps2,
+      "applied_steering_angle_deg": applied_steering_deg,
+      "applied_throttle": applied_throttle,
+      "applied_brake": applied_brake,
+    }
 
   def apply_controls(self, steer_angle, throttle_out, brake_out):
     if (time.monotonic() - self.reset_time) > 2:
@@ -90,6 +106,12 @@ class MetaDriveWorld(World):
       state.steering_angle = md_vehicle.steering_angle
       state.gps.from_xy(curr_pos)
       state.valid = True
+
+      if md_vehicle.ground_truth is not None:
+        telemetry = dict(md_vehicle.ground_truth)
+        telemetry.update(self._control_telemetry)
+        telemetry["engaged"] = is_engaged
+        self.status_q.put(QueueMessage(QueueMessageType.TELEMETRY, telemetry))
 
       is_engaged = state.is_engaged
       if is_engaged and self.first_engage is None:

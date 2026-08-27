@@ -5,6 +5,7 @@ import openpilot.cereal.messaging as messaging
 
 from openpilot.common.realtime import DT_DMON
 from openpilot.tools.sim.lib.camerad import Camerad
+from openpilot.tools.sim.lib.camera_transport import CameraTransportDelay, QueuedCameraFrame
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -14,11 +15,30 @@ if TYPE_CHECKING:
 class SimulatedSensors:
   """Simulates the C3 sensors (acc, gyro, gps, peripherals, dm state, cameras) to OpenPilot"""
 
-  def __init__(self, dual_camera=False):
+  def __init__(self, dual_camera=False, camera_transport_config=None, camera_telemetry=None):
     self.pm = messaging.PubMaster(['accelerometer', 'gyroscope', 'gpsLocationExternal', 'driverStateV2', 'driverMonitoringState', 'peripheralState'])
     self.camerad = Camerad(dual_camera=dual_camera)
     self.last_perp_update = 0
     self.last_dmon_update = 0
+    config = camera_transport_config or {}
+    self._fault_delay_ms = int(config.get("target_delay_ms", 0))
+    self._camera_frame_ids = {"road": 0, "wide": 0}
+    self.camera_transport = CameraTransportDelay(
+      self._publish_camera_frame, camera_telemetry,
+      target_delay_ms=0, capacity_frames=int(config.get("queue_capacity_frames", 8)),
+    )
+
+  def enable_camera_transport_fault(self, enabled: bool):
+    self.camera_transport.set_target_delay_ms(self._fault_delay_ms if enabled else 0)
+
+  def close(self):
+    self.camera_transport.close()
+
+  def _publish_camera_frame(self, frame: QueuedCameraFrame):
+    if frame.camera == "road":
+      self.camerad.cam_send_yuv_road(frame.yuv, frame.source_frame_id, frame.capture_mono_ns)
+    else:
+      self.camerad.cam_send_yuv_wide_road(frame.yuv, frame.source_frame_id, frame.capture_mono_ns)
 
   def send_imu_message(self, simulator_state: 'SimulatorState'):
     for _ in range(5):
@@ -101,12 +121,21 @@ class SimulatedSensors:
 
   def send_camera_images(self, world: 'World'):
     world.image_lock.acquire()
-    yuv = self.camerad.rgb_to_yuv(world.road_image)
-    self.camerad.cam_send_yuv_road(yuv)
+    # Copy immediately after the producer signal. Conversion and delay scheduling
+    # happen after the copy so a transport fault cannot hold simulator memory.
+    road_rgb = world.road_image.copy()
+    wide_rgb = world.wide_road_image.copy() if world.dual_camera else None
+    capture_mono_ns = time.monotonic_ns()
 
-    if world.dual_camera:
-      yuv = self.camerad.rgb_to_yuv(world.wide_road_image)
-      self.camerad.cam_send_yuv_wide_road(yuv)
+    road_id = self._camera_frame_ids["road"]
+    self._camera_frame_ids["road"] += 1
+    self.camera_transport.enqueue(camera="road", source_frame_id=road_id, capture_mono_ns=capture_mono_ns,
+                                  yuv=self.camerad.rgb_to_yuv(road_rgb))
+    if wide_rgb is not None:
+      wide_id = self._camera_frame_ids["wide"]
+      self._camera_frame_ids["wide"] += 1
+      self.camera_transport.enqueue(camera="wide", source_frame_id=wide_id, capture_mono_ns=capture_mono_ns,
+                                    yuv=self.camerad.rgb_to_yuv(wide_rgb))
 
   def update(self, simulator_state: 'SimulatorState', world: 'World'):
     now = time.monotonic()
