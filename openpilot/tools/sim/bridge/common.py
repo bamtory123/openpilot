@@ -184,10 +184,13 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       self.simulator_state.is_engaged = self.simulated_car.sm['selfdriveState'].active
 
       if self.rk.frame % 10 == 0:
+        selfdrive_state = self.simulated_car.sm['selfdriveState']
         status_q.put(QueueMessage(QueueMessageType.TELEMETRY, {
           "type": "openpilot_state", "frame": self.rk.frame,
-          "engageable": bool(self.simulated_car.sm['selfdriveState'].engageable),
+          "engageable": bool(selfdrive_state.engageable),
           "engaged": bool(self.simulator_state.is_engaged),
+          "state": int(selfdrive_state.state), "alert_text_1": selfdrive_state.alertText1,
+          "alert_text_2": selfdrive_state.alertText2,
         }))
 
       if self.simulator_state.is_engaged:
