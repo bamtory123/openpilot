@@ -193,7 +193,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           "engaged": bool(self.simulator_state.is_engaged),
           "state": str(selfdrive_state.state), "alert_text_1": selfdrive_state.alertText1,
           "alert_text_2": selfdrive_state.alertText2,
-          "onroad_events": [event.which() for event in self.simulated_car.sm['onroadEvents']],
+          "onroad_events": [str(event.name) for event in self.simulated_car.sm['onroadEvents']],
         }))
 
       if self.simulator_state.is_engaged:
