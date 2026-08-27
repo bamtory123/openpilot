@@ -22,6 +22,7 @@ class QueueMessageType(Enum):
   CONTROL_COMMAND = 1
   TERMINATION_INFO = 2
   CLOSE_STATUS = 3
+  TELEMETRY = 4
 
 def control_cmd_gen(cmd: str):
   return QueueMessage(QueueMessageType.CONTROL_COMMAND, cmd)

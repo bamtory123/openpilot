@@ -1,3 +1,5 @@
+import time
+
 import numpy as np
 
 from openpilot.cereal.visionipc import VisionStreamType
@@ -65,7 +67,9 @@ class Camerad:
     return rgb_to_nv12(rgb)
 
   def _send_yuv(self, yuv, frame_id, pub_type, yuv_type):
-    eof = int(frame_id * 0.05 * 1e9)
+    # locationd compares cameraOdometry.timestampEof against IMU timestamps.
+    # Use the same monotonic clock rather than a frame counter relative to zero.
+    eof = time.monotonic_ns()
     self.vipc_server.send(yuv_type, yuv, frame_id, eof, eof)
 
     dat = messaging.new_message(pub_type, valid=True)

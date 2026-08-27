@@ -34,6 +34,7 @@ from openpilot.selfdrive.modeld.helpers import usbgpu_present, usbgpu_compiled, 
 
 PROCESS_NAME = "openpilot.selfdrive.modeld.modeld"
 SEND_RAW_PRED = os.getenv('SEND_RAW_PRED')
+SIMULATION = os.getenv('SIMULATION') == '1'
 
 LAT_SMOOTH_SECONDS = 0.0
 LONG_SMOOTH_SECONDS = 0.3
@@ -167,6 +168,12 @@ class ModelState:
     for key in bufs.keys():
       ptr = np.frombuffer(bufs[key].data, dtype=np.uint8).ctypes.data
       yuv_size = self.frame_buf_params[key][3]
+      if SIMULATION and self.WARP_DEV == 'CUDA':
+        # VisionIpc buffers supplied by the simulator live in host memory.
+        # CUDA cannot safely dereference their host addresses via from_blob, so
+        # make an explicit copy into device-owned memory for simulation only.
+        self.full_frames[key] = Tensor(np.frombuffer(bufs[key].data, dtype=np.uint8).copy(), device=self.WARP_DEV).realize()
+        continue
       # There is a ringbuffer of imgs, just cache tensors pointing to all of them
       cache_key = (key, ptr)
       if cache_key not in self._blob_cache:
