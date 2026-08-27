@@ -107,13 +107,14 @@ class MetaDriveWorld(World):
       state.gps.from_xy(curr_pos)
       state.valid = True
 
+      is_engaged = state.is_engaged
+
       if md_vehicle.ground_truth is not None:
         telemetry = dict(md_vehicle.ground_truth)
         telemetry.update(self._control_telemetry)
         telemetry["engaged"] = is_engaged
         self.status_q.put(QueueMessage(QueueMessageType.TELEMETRY, telemetry))
 
-      is_engaged = state.is_engaged
       if is_engaged and self.first_engage is None:
         self.first_engage = time.monotonic()
         self.op_engaged.set()
