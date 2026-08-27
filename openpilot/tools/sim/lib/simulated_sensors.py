@@ -16,7 +16,8 @@ class SimulatedSensors:
   """Simulates the C3 sensors (acc, gyro, gps, peripherals, dm state, cameras) to OpenPilot"""
 
   def __init__(self, dual_camera=False, camera_transport_config=None, camera_telemetry=None):
-    self.pm = messaging.PubMaster(['accelerometer', 'gyroscope', 'gpsLocationExternal', 'driverStateV2', 'driverMonitoringState', 'peripheralState'])
+    self.pm = messaging.PubMaster(['accelerometer', 'gyroscope', 'gpsLocationExternal', 'driverStateV2', 'driverMonitoringState', 'peripheralState',
+                                  'deviceMotion'])
     self.camerad = Camerad(dual_camera=dual_camera)
     self.last_perp_update = 0
     self.last_dmon_update = 0
@@ -89,6 +90,20 @@ class SimulatedSensors:
 
       self.pm.send('gpsLocationExternal', dat)
 
+  def send_device_motion(self, simulator_state: 'SimulatorState'):
+    dat = messaging.new_message('deviceMotion', valid=True)
+    motion = dat.deviceMotion
+    motion.orientationNED = {'x': 0.0, 'y': 0.0, 'z': 0.0, 'valid': True}
+    motion.velocityDevice = {'x': simulator_state.velocity.x, 'y': simulator_state.velocity.y,
+                             'z': simulator_state.velocity.z, 'valid': True}
+    motion.angularVelocityDevice = {'x': simulator_state.imu.gyroscope.x, 'y': simulator_state.imu.gyroscope.y,
+                                    'z': simulator_state.imu.gyroscope.z, 'valid': True}
+    motion.accelerationDevice = {'x': simulator_state.imu.accelerometer.x, 'y': simulator_state.imu.accelerometer.y,
+                                 'z': simulator_state.imu.accelerometer.z, 'valid': True}
+    motion.inputsOK = motion.sensorsOK = motion.posenetOK = True
+    motion.timestamp = dat.logMonoTime
+    self.pm.send('deviceMotion', dat)
+
   def send_peripheral_state(self):
     dat = messaging.new_message('peripheralState')
     dat.valid = True
@@ -141,6 +156,7 @@ class SimulatedSensors:
     now = time.monotonic()
     self.send_imu_message(simulator_state)
     self.send_gps_message(simulator_state)
+    self.send_device_motion(simulator_state)
 
     if (now - self.last_dmon_update) > DT_DMON/2:
       self.send_fake_driver_monitoring()
