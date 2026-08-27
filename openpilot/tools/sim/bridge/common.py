@@ -6,7 +6,7 @@ import numpy as np
 
 from collections import namedtuple
 from enum import Enum
-from multiprocessing import Process, Queue, Value
+from multiprocessing import Event, Process, Queue, Value
 from abc import ABC, abstractmethod
 from opendbc.car.honda.values import CruiseButtons
 from openpilot.common.params import Params
@@ -52,6 +52,7 @@ class SimulatorBridge(ABC):
     self._exit_event: threading.Event | None = None
     self._threads = []
     self._keep_alive = True
+    self._shutdown_event = Event()
     self.started = Value('i', False)
     signal.signal(signal.SIGTERM, self._on_shutdown)
     self.simulator_state = SimulatorState()
@@ -68,6 +69,7 @@ class SimulatorBridge(ABC):
 
   def shutdown(self):
     self._keep_alive = False
+    self._shutdown_event.set()
 
   def bridge_keep_alive(self, control_q: Queue, status_q: Queue, retries: int):
     try:
@@ -129,7 +131,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
     measurement_announced = False
     fault_enabled_at = None
     fault_settle_s = float(self.simlab_config.get("run", {}).get("fault_settle_s", 5))
-    while self._keep_alive:
+    while self._keep_alive and not self._shutdown_event.is_set():
       throttle_out = steer_out = brake_out = 0.0
       throttle_op = steer_op = brake_op = 0.0
 
@@ -191,6 +193,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
           "engaged": bool(self.simulator_state.is_engaged),
           "state": str(selfdrive_state.state), "alert_text_1": selfdrive_state.alertText1,
           "alert_text_2": selfdrive_state.alertText2,
+          "onroad_events": [event.which() for event in self.simulated_car.sm['onroadEvents']],
         }))
 
       if self.simulator_state.is_engaged:
