@@ -71,13 +71,16 @@ class MetaDriveWorld(World):
   def emit_run_event(self, state):
     self.status_q.put(QueueMessage(QueueMessageType.TELEMETRY, {"type": "run_state", "state": state, "mono_ns": time.monotonic_ns()}))
 
-  def set_control_telemetry(self, steering_cmd_deg, accel_cmd_mps2, applied_steering_deg, applied_throttle, applied_brake):
+  def set_control_telemetry(self, steering_cmd_deg, accel_cmd_mps2, applied_throttle, applied_brake,
+                            model_curvature, planner_curvature, control_curvature):
     self._control_telemetry = {
       "op_steering_angle_cmd_deg": steering_cmd_deg,
       "op_accel_cmd_mps2": accel_cmd_mps2,
-      "applied_steering_angle_deg": applied_steering_deg,
       "applied_throttle": applied_throttle,
       "applied_brake": applied_brake,
+      "model_target_curvature_1pm": model_curvature,
+      "planner_target_curvature_1pm": planner_curvature,
+      "control_target_curvature_1pm": control_curvature,
     }
 
   def apply_controls(self, steer_angle, throttle_out, brake_out):

@@ -15,7 +15,7 @@ class SimulatedCar:
 
   def __init__(self):
     self.pm = messaging.PubMaster(['can', 'pandaStates'])
-    self.sm = messaging.SubMaster(['carControl', 'controlsState', 'carParams', 'selfdriveState', 'onroadEvents'])
+    self.sm = messaging.SubMaster(['carControl', 'controlsState', 'carParams', 'selfdriveState', 'onroadEvents', 'modelV2', 'lateralManeuverPlan'])
     self.cp = self.get_car_can_parser()
     self.idx = 0
     self.params = Params()

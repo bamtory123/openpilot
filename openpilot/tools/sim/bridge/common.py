@@ -211,8 +211,11 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       steer_out = steer_op if self.simulator_state.is_engaged else steer_manual
 
       if hasattr(self.world, "set_control_telemetry"):
+        model_curvature = self.simulated_car.sm['modelV2'].action.desiredCurvature
+        planner_curvature = self.simulated_car.sm['lateralManeuverPlan'].desiredCurvature
+        control_curvature = self.simulated_car.sm['controlsState'].desiredCurvature
         self.world.set_control_telemetry(steer_op, self.simulated_car.sm['carControl'].actuators.accel if self.simulator_state.is_engaged else 0.0,
-                                         steer_out, throttle_out, brake_out)
+                                         throttle_out, brake_out, model_curvature, planner_curvature, control_curvature)
 
       if self.simulator_state.is_engaged and not fault_enabled:
         self.simulated_sensors.enable_camera_transport_fault(True)

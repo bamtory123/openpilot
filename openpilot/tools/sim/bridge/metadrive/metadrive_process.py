@@ -64,6 +64,9 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     wide_road_image = np.frombuffer(wide_camera_array.get_obj(), dtype=np.uint8).reshape((H, W, 3))
 
   env = MetaDriveEnv(config)
+  previous_heading = None
+  previous_simulation_time_s = None
+  normalized_steer = 0.0
 
   def get_current_lane_info(vehicle):
     _, lane_info, on_lane = vehicle.navigation._get_current_lane(vehicle)
@@ -71,14 +74,28 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return lane_idx, on_lane
 
   def reference_lane_telemetry(vehicle, simulation_frame, simulation_time_s, acceleration_mps2):
+    nonlocal previous_heading, previous_simulation_time_s
     vehicle_width = float(vehicle.config.get("width") or 2.0)
+    heading = float(vehicle.heading_theta)
+    yaw_rate = 0.0
+    if previous_heading is not None and previous_simulation_time_s is not None:
+      dt = simulation_time_s - previous_simulation_time_s
+      if dt > 0:
+        yaw_rate = ((heading - previous_heading + math.pi) % (2 * math.pi) - math.pi) / dt
+    previous_heading = heading
+    previous_simulation_time_s = simulation_time_s
+    speed_mps = float(np.linalg.norm(vehicle.velocity))
     lanes = list(getattr(vehicle.navigation, "current_ref_lanes", []) or [])
     lane = lanes[reference_lane_index] if 0 <= reference_lane_index < len(lanes) else None
     lane_idx, on_lane = get_current_lane_info(vehicle)
     result = {
       "type": "vehicle_telemetry", "simulation_frame": simulation_frame, "simulation_time_s": simulation_time_s,
       "position_x_m": float(vehicle.position[0]), "position_y_m": float(vehicle.position[1]),
-      "speed_mps": float(np.linalg.norm(vehicle.velocity)), "acceleration_mps2": acceleration_mps2,
+      "speed_mps": speed_mps, "acceleration_mps2": acceleration_mps2,
+      "simulator_normalized_steer": float(normalized_steer),
+      "applied_steering_angle_deg": float(vehicle.steering * vehicle.MAX_STEERING),
+      "actual_yaw_rate_rad_s": yaw_rate,
+      "actual_curvature_1pm": yaw_rate / speed_mps if speed_mps > 0.1 else 0.0,
       "reference_lane_index": reference_lane_index, "current_lane_index": lane_idx,
       "metadrive_on_lane": bool(on_lane), "reference_road_id": None,
       "route_progress_m": None, "lateral_error_m": None, "heading_error_rad": None,
@@ -152,6 +169,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
       steer_metadrive = steer_angle * 1 / (env.vehicle.MAX_STEERING * steer_ratio)
       steer_metadrive = np.clip(steer_metadrive, -1, 1)
+      normalized_steer = float(steer_metadrive)
 
       vc = [steer_metadrive, gas]
 
