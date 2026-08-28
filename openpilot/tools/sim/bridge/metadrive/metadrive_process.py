@@ -73,7 +73,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   debug_camera_captured = False
   controller_target_curvature = 0.0
   controller_lookahead_heading_error = 0.0
-  previous_heading = None
+  previous_velocity_heading = None
   previous_simulation_time_s = None
   normalized_steer = 0.0
 
@@ -83,17 +83,22 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return lane_idx, on_lane
 
   def reference_lane_telemetry(vehicle, simulation_frame, simulation_time_s, acceleration_mps2):
-    nonlocal previous_heading, previous_simulation_time_s
+    nonlocal previous_velocity_heading, previous_simulation_time_s
     vehicle_width = float(vehicle.config.get("width") or 2.0)
-    heading = float(vehicle.heading_theta)
+    velocity_xy = np.asarray(vehicle.velocity[:2])
+    speed_mps = float(np.linalg.norm(vehicle.velocity))
     yaw_rate = 0.0
-    if previous_heading is not None and previous_simulation_time_s is not None:
+    if speed_mps > 0.1:
+      velocity_heading = math.atan2(float(velocity_xy[1]), float(velocity_xy[0]))
+    else:
+      velocity_heading = None
+    if velocity_heading is not None and previous_velocity_heading is not None and previous_simulation_time_s is not None:
       dt = simulation_time_s - previous_simulation_time_s
       if dt > 0:
-        yaw_rate = ((heading - previous_heading + math.pi) % (2 * math.pi) - math.pi) / dt
-    previous_heading = heading
-    previous_simulation_time_s = simulation_time_s
-    speed_mps = float(np.linalg.norm(vehicle.velocity))
+        yaw_rate = ((velocity_heading - previous_velocity_heading + math.pi) % (2 * math.pi) - math.pi) / dt
+    if velocity_heading is not None:
+      previous_velocity_heading = velocity_heading
+      previous_simulation_time_s = simulation_time_s
     lanes = list(getattr(vehicle.navigation, "current_ref_lanes", []) or [])
     lane = lanes[reference_lane_index] if 0 <= reference_lane_index < len(lanes) else None
     lane_idx, on_lane = get_current_lane_info(vehicle)
@@ -108,6 +113,10 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "actual_curvature_1pm": yaw_rate / speed_mps if speed_mps > 0.1 else 0.0,
       "controller_target_curvature_1pm": controller_target_curvature,
       "controller_lookahead_heading_error_rad": controller_lookahead_heading_error,
+      "reference_tangent_world_x": None, "reference_tangent_world_y": None,
+      "vehicle_velocity_dir_x": None, "vehicle_velocity_dir_y": None,
+      "lookahead_vector_world_x": None, "lookahead_vector_world_y": None,
+      "lookahead_dot_velocity": None, "lookahead_cross_velocity": None,
       "reference_lane_index": reference_lane_index, "current_lane_index": lane_idx,
       "metadrive_on_lane": bool(on_lane), "reference_road_id": None,
       "route_progress_m": None, "lateral_error_m": None, "heading_error_rad": None,
@@ -118,6 +127,13 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       return result
     longitudinal, lateral = lane.local_coordinates(vehicle.position)
     lane_width = float(getattr(lane, "width", None) or vehicle_width)
+    tangent = np.asarray(lane.position(longitudinal + 1.0, 0.0)) - np.asarray(lane.position(longitudinal - 1.0, 0.0))
+    tangent_norm = float(np.linalg.norm(tangent))
+    lookahead_m = float(simulator_control["lookahead_m"]) if simulator_control is not None else 0.0
+    lookahead_vector = np.asarray(lane.position(longitudinal + lookahead_m, 0.0)) - np.asarray(vehicle.position)
+    velocity_xy = np.asarray(vehicle.velocity[:2])
+    velocity_xy_norm = float(np.linalg.norm(velocity_xy))
+    velocity_direction = velocity_xy / velocity_xy_norm if velocity_xy_norm > 0.1 else None
     heading_error = (float(vehicle.heading_theta) - float(lane.heading_theta_at(longitudinal)) + math.pi) % (2 * math.pi) - math.pi
     result.update({
       "reference_road_id": str(getattr(lane, "index", (None,))[0]), "route_progress_m": float(longitudinal),
@@ -125,6 +141,16 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "reference_curvature_1pm": ((float(lane.heading_theta_at(longitudinal + 1.0)) - float(lane.heading_theta_at(longitudinal - 1.0)) + math.pi) % (2 * math.pi) - math.pi) / 2.0,
       "lane_departure": abs(float(lateral)) > max(0.0, (lane_width - result["vehicle_width_m"]) / 2),
     })
+    if tangent_norm > 0.0:
+      result["reference_tangent_world_x"] = float(tangent[0] / tangent_norm)
+      result["reference_tangent_world_y"] = float(tangent[1] / tangent_norm)
+    if velocity_direction is not None:
+      result.update({
+        "vehicle_velocity_dir_x": float(velocity_direction[0]), "vehicle_velocity_dir_y": float(velocity_direction[1]),
+        "lookahead_vector_world_x": float(lookahead_vector[0]), "lookahead_vector_world_y": float(lookahead_vector[1]),
+        "lookahead_dot_velocity": float(np.dot(velocity_direction, lookahead_vector)),
+        "lookahead_cross_velocity": float(velocity_direction[0] * lookahead_vector[1] - velocity_direction[1] * lookahead_vector[0]),
+      })
     return result
 
   def simulator_controller(vehicle):
@@ -137,12 +163,18 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     longitudinal, lateral = lane.local_coordinates(vehicle.position)
     if simulator_control["mode"] == "pure_pursuit":
       target = lane.position(longitudinal + float(simulator_control["lookahead_m"]), 0.0)
-      delta = target - vehicle.position
+      delta = np.asarray(target) - np.asarray(vehicle.position)
       distance = max(float(np.linalg.norm(delta)), 0.1)
-      alpha = (math.atan2(float(delta[1]), float(delta[0])) - float(vehicle.heading_theta) + math.pi) % (2 * math.pi) - math.pi
-      controller_target_curvature = 2.0 * math.sin(alpha) / distance
-      controller_lookahead_heading_error = alpha
-      steer = controller_target_curvature * float(simulator_control["curvature_to_steer_gain"])
+      velocity_xy = np.asarray(vehicle.velocity[:2])
+      velocity_norm = float(np.linalg.norm(velocity_xy))
+      if velocity_norm <= 0.1:
+        steer = 0.0
+      else:
+        forward = velocity_xy / velocity_norm
+        alpha = math.atan2(float(forward[0] * delta[1] - forward[1] * delta[0]), float(np.dot(forward, delta)))
+        controller_target_curvature = 2.0 * math.sin(alpha) / distance
+        controller_lookahead_heading_error = alpha
+        steer = controller_target_curvature * float(simulator_control["curvature_to_steer_gain"])
     else:
       target_heading = float(lane.heading_theta_at(longitudinal + float(simulator_control["lookahead_m"])))
       heading_error = (float(vehicle.heading_theta) - target_heading + math.pi) % (2 * math.pi) - math.pi
@@ -151,9 +183,12 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return float(np.clip(steer, -0.2, 0.2)), float(np.clip(0.25 * speed_error, -1.0, 1.0))
 
   def reset():
+    nonlocal previous_velocity_heading, previous_simulation_time_s
     # The fixed seed is configured as MetaDrive's start_seed. Passing it to
     # reset() would be interpreted as a bounded scenario index on 0.4.2.3.
     env.reset()
+    previous_velocity_heading = None
+    previous_simulation_time_s = None
     env.vehicle.config["max_speed_km_h"] = 1000
     lane_idx_prev, _ = get_current_lane_info(env.vehicle)
 
