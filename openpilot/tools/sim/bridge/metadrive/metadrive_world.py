@@ -75,7 +75,7 @@ class MetaDriveWorld(World):
                             model_curvature, planner_curvature, control_curvature, model_path_y_20m,
                             model_path_heading_20m_rad, model_path_end_x_m, model_path_end_y_m,
                             model_path_end_heading_rad, model_path_end_speed_mps, model_valid, model_frame_id,
-                            model_frame_age, model_frame_drop_perc, model_execution_time_s):
+                            model_frame_age, model_frame_drop_perc, model_execution_time_s, calibration_rpy_rad, calibration_status):
     self._control_telemetry = {
       "op_steering_angle_cmd_deg": steering_cmd_deg,
       "op_accel_cmd_mps2": accel_cmd_mps2,
@@ -95,6 +95,10 @@ class MetaDriveWorld(World):
       "model_frame_age": model_frame_age,
       "model_frame_drop_perc": model_frame_drop_perc,
       "model_execution_time_s": model_execution_time_s,
+      "calibration_roll_rad": calibration_rpy_rad[0],
+      "calibration_pitch_rad": calibration_rpy_rad[1],
+      "calibration_yaw_rad": calibration_rpy_rad[2],
+      "calibration_status": calibration_status,
     }
 
   def apply_controls(self, steer_angle, throttle_out, brake_out):
