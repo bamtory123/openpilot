@@ -1,6 +1,7 @@
 import math
 import os
 import time
+import json
 import numpy as np
 
 from collections import namedtuple
@@ -75,6 +76,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   env = MetaDriveEnv(config)
   camera_fov_deg = float(environment_config.get("camera_fov_deg", 40))
   debug_camera_path = os.environ.get("SIMLAB_CAMERA_DEBUG_PATH")
+  debug_camera_metadata_path = os.environ.get("SIMLAB_CAMERA_DEBUG_METADATA_PATH") or (f"{debug_camera_path}.json" if debug_camera_path else None)
   debug_camera_after_frame = int(os.environ.get("SIMLAB_CAMERA_DEBUG_AFTER_FRAME", "0"))
   debug_camera_captured = False
   controller_target_curvature = 0.0
@@ -234,6 +236,12 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     if debug_camera_path and not debug_camera_captured and rk.frame >= debug_camera_after_frame and cam is env.engine.sensors["rgb_road"]:
       os.makedirs(os.path.dirname(debug_camera_path), exist_ok=True)
       Image.fromarray(img).save(debug_camera_path)
+      if debug_camera_metadata_path:
+        os.makedirs(os.path.dirname(debug_camera_metadata_path), exist_ok=True)
+        with open(debug_camera_metadata_path, "w", encoding="utf-8") as handle:
+          json.dump({"simulation_frame": rk.frame, "simulation_time_s": rk.frame / 100,
+                     "camera_fov_deg": camera_fov_deg, "camera_position_m": list(map(float, C3_POSITION)),
+                     "camera_hpr_deg": list(map(float, C3_HPR))}, handle, sort_keys=True)
       debug_camera_captured = True
     return img
 
