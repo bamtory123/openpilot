@@ -224,9 +224,11 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
         path_end_x = float(path_x[-1]) if path_valid else 0.0
         path_end_y = float(path_y[-1]) if path_valid else 0.0
         path_end_heading = float(np.arctan2(path_y[-1] - path_y[0], path_x[-1] - path_x[0])) if path_valid else 0.0
+        path_end_speed = float(model.velocity.x[-1]) if len(model.velocity.x) else None
         self.world.set_control_telemetry(steer_op, self.simulated_car.sm['carControl'].actuators.accel if self.simulator_state.is_engaged else 0.0,
                                          throttle_out, brake_out, model_curvature, planner_curvature, control_curvature,
-                                         path_y_20m, path_heading_20m, path_end_x, path_end_y, path_end_heading)
+                                         path_y_20m, path_heading_20m, path_end_x, path_end_y, path_end_heading, path_end_speed,
+                                         model.valid, model.frameId, model.frameAge, model.frameDropPerc, model.modelExecutionTime)
 
       if self.simulator_state.is_engaged and not fault_enabled:
         self.simulated_sensors.enable_camera_transport_fault(True)
