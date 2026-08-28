@@ -78,6 +78,11 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   debug_camera_path = os.environ.get("SIMLAB_CAMERA_DEBUG_PATH")
   debug_camera_metadata_path = os.environ.get("SIMLAB_CAMERA_DEBUG_METADATA_PATH") or (f"{debug_camera_path}.json" if debug_camera_path else None)
   debug_camera_after_frame = int(os.environ.get("SIMLAB_CAMERA_DEBUG_AFTER_FRAME", "0"))
+  debug_capture_frames = [int(frame) for frame in os.environ.get("SIMLAB_CAMERA_DEBUG_CAPTURE_FRAMES", "").split(",") if frame]
+  debug_capture_dir = os.environ.get("SIMLAB_CAMERA_DEBUG_CAPTURE_DIR")
+  if debug_capture_frames and not debug_capture_dir:
+    raise ValueError("SIMLAB_CAMERA_DEBUG_CAPTURE_DIR is required with SIMLAB_CAMERA_DEBUG_CAPTURE_FRAMES")
+  debug_capture_index = 0
   debug_camera_captured = False
   controller_target_curvature = 0.0
   controller_lookahead_heading_error = 0.0
@@ -225,7 +230,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   previous_speed = 0.0
 
   def get_cam_as_rgb(cam):
-    nonlocal debug_camera_captured
+    nonlocal debug_camera_captured, debug_capture_index
     cam = env.engine.sensors[cam]
     cam.get_cam().reparentTo(env.vehicle.origin)
     cam.get_cam().setPos(C3_POSITION)
@@ -233,17 +238,25 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     img = cam.perceive(to_float=False)
     if not isinstance(img, np.ndarray):
       img = img.get() # convert cupy array to numpy
-    if debug_camera_path and not debug_camera_captured and rk.frame >= debug_camera_after_frame and cam is env.engine.sensors["rgb_road"]:
-      os.makedirs(os.path.dirname(debug_camera_path), exist_ok=True)
-      Image.fromarray(img).save(debug_camera_path)
-      if debug_camera_metadata_path:
-        os.makedirs(os.path.dirname(debug_camera_metadata_path), exist_ok=True)
-        with open(debug_camera_metadata_path, "w", encoding="utf-8") as handle:
-          json.dump({"simulation_frame": rk.frame, "simulation_time_s": rk.frame / 100,
-                     "camera_fov_deg": camera_fov_deg, "camera_focal_length_px": W / (2.0 * math.tan(math.radians(camera_fov_deg) / 2.0)),
-                     "camera_position_m": list(map(float, C3_POSITION)),
-                     "camera_hpr_deg": list(map(float, C3_HPR))}, handle, sort_keys=True)
-      debug_camera_captured = True
+    if cam is env.engine.sensors["rgb_road"]:
+      capture_path = metadata_path = None
+      if debug_capture_index < len(debug_capture_frames) and rk.frame >= debug_capture_frames[debug_capture_index]:
+        capture_path = os.path.join(debug_capture_dir, f"road-frame-{rk.frame:06d}.png")
+        metadata_path = f"{capture_path}.json"
+        debug_capture_index += 1
+      elif debug_camera_path and not debug_camera_captured and rk.frame >= debug_camera_after_frame:
+        capture_path, metadata_path = debug_camera_path, debug_camera_metadata_path
+        debug_camera_captured = True
+      if capture_path:
+        os.makedirs(os.path.dirname(capture_path), exist_ok=True)
+        Image.fromarray(img).save(capture_path)
+        if metadata_path:
+          os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
+          with open(metadata_path, "w", encoding="utf-8") as handle:
+            json.dump({"simulation_frame": rk.frame, "simulation_time_s": rk.frame / 100,
+                       "camera_fov_deg": camera_fov_deg, "camera_focal_length_px": W / (2.0 * math.tan(math.radians(camera_fov_deg) / 2.0)),
+                       "camera_position_m": list(map(float, C3_POSITION)),
+                       "camera_hpr_deg": list(map(float, C3_HPR))}, handle, sort_keys=True)
     return img
 
   rk = Ratekeeper(100, None)
