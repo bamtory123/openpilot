@@ -118,6 +118,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     result.update({
       "reference_road_id": str(getattr(lane, "index", (None,))[0]), "route_progress_m": float(longitudinal),
       "lateral_error_m": float(lateral), "heading_error_rad": heading_error, "lane_width_m": lane_width,
+      "reference_curvature_1pm": ((float(lane.heading_theta_at(longitudinal + 1.0)) - float(lane.heading_theta_at(longitudinal - 1.0)) + math.pi) % (2 * math.pi) - math.pi) / 2.0,
       "lane_departure": abs(float(lateral)) > max(0.0, (lane_width - result["vehicle_width_m"]) / 2),
     })
     return result
