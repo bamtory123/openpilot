@@ -25,6 +25,12 @@ C3_HPR = Vec3(0, 0,0)
 metadrive_simulation_state = namedtuple("metadrive_simulation_state", ["running", "done", "done_info"])
 metadrive_vehicle_state = namedtuple("metadrive_vehicle_state", ["velocity", "position", "bearing", "steering_angle", "ground_truth"])
 
+
+def world_signed_angle(forward: np.ndarray, target: np.ndarray) -> float:
+  """Signed angle from a vehicle world-frame direction to a world-frame target."""
+  return math.atan2(float(forward[0] * target[1] - forward[1] * target[0]), float(np.dot(forward, target)))
+
+
 def apply_metadrive_patches(arrive_dest_done=True):
   # By default, metadrive won't try to use cuda images unless it's used as a sensor for vehicles, so patch that in
   def add_image_sensor_patched(self, name: str, cls, args):
@@ -171,7 +177,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
         steer = 0.0
       else:
         forward = velocity_xy / velocity_norm
-        alpha = math.atan2(float(forward[0] * delta[1] - forward[1] * delta[0]), float(np.dot(forward, delta)))
+        alpha = world_signed_angle(forward, delta)
         controller_target_curvature = 2.0 * math.sin(alpha) / distance
         controller_lookahead_heading_error = alpha
         steer = controller_target_curvature * float(simulator_control["curvature_to_steer_gain"])
@@ -181,7 +187,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       velocity_norm = float(np.linalg.norm(velocity_xy))
       tangent = np.asarray(lane.position(longitudinal + 1.0, 0.0)) - np.asarray(lane.position(longitudinal - 1.0, 0.0))
       tangent_heading = math.atan2(float(tangent[1]), float(tangent[0]))
-      heading_error = 0.0 if velocity_norm <= 0.1 else (math.atan2(float(velocity_xy[1]), float(velocity_xy[0])) - tangent_heading + math.pi) % (2 * math.pi) - math.pi
+      heading_error = 0.0 if velocity_norm <= 0.1 else world_signed_angle(velocity_xy / velocity_norm, np.array([math.cos(tangent_heading), math.sin(tangent_heading)]))
       controller_target_curvature = reference_curvature - float(simulator_control["lateral_gain"]) * float(lateral) - float(simulator_control["heading_gain"]) * heading_error
       controller_lookahead_heading_error = heading_error
       steer = controller_target_curvature * float(simulator_control["curvature_to_steer_gain"])
