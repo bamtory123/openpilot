@@ -230,7 +230,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
                                          throttle_out, brake_out, model_curvature, planner_curvature, control_curvature,
                                          path_y_20m, path_heading_20m, path_end_x, path_end_y, path_end_heading, path_end_speed,
                                          self.simulated_car.sm.valid['modelV2'], model.frameId, model.frameAge,
-                                         model.frameDropPerc, model.modelExecutionTime, list(calibration.rpyCalib), int(calibration.calStatus))
+                                         model.frameDropPerc, model.modelExecutionTime, list(calibration.rpyCalib), str(calibration.calStatus))
 
       if self.simulator_state.is_engaged and not fault_enabled:
         self.simulated_sensors.enable_camera_transport_fault(True)
