@@ -71,6 +71,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   debug_camera_path = os.environ.get("SIMLAB_CAMERA_DEBUG_PATH")
   debug_camera_after_frame = int(os.environ.get("SIMLAB_CAMERA_DEBUG_AFTER_FRAME", "0"))
   debug_camera_captured = False
+  controller_target_curvature = 0.0
+  controller_lookahead_heading_error = 0.0
   previous_heading = None
   previous_simulation_time_s = None
   normalized_steer = 0.0
@@ -104,6 +106,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "applied_steering_angle_deg": float(vehicle.steering * vehicle.MAX_STEERING),
       "actual_yaw_rate_rad_s": yaw_rate,
       "actual_curvature_1pm": yaw_rate / speed_mps if speed_mps > 0.1 else 0.0,
+      "controller_target_curvature_1pm": controller_target_curvature,
+      "controller_lookahead_heading_error_rad": controller_lookahead_heading_error,
       "reference_lane_index": reference_lane_index, "current_lane_index": lane_idx,
       "metadrive_on_lane": bool(on_lane), "reference_road_id": None,
       "route_progress_m": None, "lateral_error_m": None, "heading_error_rad": None,
@@ -124,6 +128,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return result
 
   def simulator_controller(vehicle):
+    nonlocal controller_target_curvature, controller_lookahead_heading_error
     assert simulator_control is not None
     lanes = list(getattr(vehicle.navigation, "current_ref_lanes", []) or [])
     lane = lanes[reference_lane_index] if 0 <= reference_lane_index < len(lanes) else None
@@ -135,7 +140,9 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       delta = target - vehicle.position
       distance = max(float(np.linalg.norm(delta)), 0.1)
       alpha = (math.atan2(float(delta[1]), float(delta[0])) - float(vehicle.heading_theta) + math.pi) % (2 * math.pi) - math.pi
-      steer = 2.0 * math.sin(alpha) / distance * float(simulator_control["curvature_to_steer_gain"])
+      controller_target_curvature = 2.0 * math.sin(alpha) / distance
+      controller_lookahead_heading_error = alpha
+      steer = controller_target_curvature * float(simulator_control["curvature_to_steer_gain"])
     else:
       target_heading = float(lane.heading_theta_at(longitudinal + float(simulator_control["lookahead_m"])))
       heading_error = (float(vehicle.heading_theta) - target_heading + math.pi) % (2 * math.pi) - math.pi
