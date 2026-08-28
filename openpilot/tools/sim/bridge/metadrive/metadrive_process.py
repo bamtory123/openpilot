@@ -65,7 +65,6 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
   env = MetaDriveEnv(config)
   camera_fov_deg = float(environment_config.get("camera_fov_deg", 40))
-  env.engine.sensors["rgb_road"].get_lens().setFov(camera_fov_deg)
   previous_heading = None
   previous_simulation_time_s = None
   normalized_steer = 0.0
@@ -133,6 +132,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return lane_idx_prev
 
   lane_idx_prev = reset()
+  env.engine.sensors["rgb_road"].get_lens().setFov(camera_fov_deg)
   start_time = None
   previous_speed = 0.0
 
