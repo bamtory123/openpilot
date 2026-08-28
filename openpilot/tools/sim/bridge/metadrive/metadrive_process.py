@@ -129,7 +129,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     lane_width = float(getattr(lane, "width", None) or vehicle_width)
     tangent = np.asarray(lane.position(longitudinal + 1.0, 0.0)) - np.asarray(lane.position(longitudinal - 1.0, 0.0))
     tangent_norm = float(np.linalg.norm(tangent))
-    lookahead_m = float(simulator_control["lookahead_m"]) if simulator_control is not None else 0.0
+    lookahead_m = float(simulator_control.get("lookahead_m", 0.0)) if simulator_control is not None else 0.0
     lookahead_vector = np.asarray(lane.position(longitudinal + lookahead_m, 0.0)) - np.asarray(vehicle.position)
     velocity_xy = np.asarray(vehicle.velocity[:2])
     velocity_xy_norm = float(np.linalg.norm(velocity_xy))
@@ -175,6 +175,16 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
         controller_target_curvature = 2.0 * math.sin(alpha) / distance
         controller_lookahead_heading_error = alpha
         steer = controller_target_curvature * float(simulator_control["curvature_to_steer_gain"])
+    elif simulator_control["mode"] == "reference_curvature_follow":
+      reference_curvature = ((float(lane.heading_theta_at(longitudinal + 1.0)) - float(lane.heading_theta_at(longitudinal - 1.0)) + math.pi) % (2 * math.pi) - math.pi) / 2.0
+      velocity_xy = np.asarray(vehicle.velocity[:2])
+      velocity_norm = float(np.linalg.norm(velocity_xy))
+      tangent = np.asarray(lane.position(longitudinal + 1.0, 0.0)) - np.asarray(lane.position(longitudinal - 1.0, 0.0))
+      tangent_heading = math.atan2(float(tangent[1]), float(tangent[0]))
+      heading_error = 0.0 if velocity_norm <= 0.1 else (math.atan2(float(velocity_xy[1]), float(velocity_xy[0])) - tangent_heading + math.pi) % (2 * math.pi) - math.pi
+      controller_target_curvature = reference_curvature - float(simulator_control["lateral_gain"]) * float(lateral) - float(simulator_control["heading_gain"]) * heading_error
+      controller_lookahead_heading_error = heading_error
+      steer = controller_target_curvature * float(simulator_control["curvature_to_steer_gain"])
     else:
       target_heading = float(lane.heading_theta_at(longitudinal + float(simulator_control["lookahead_m"])))
       heading_error = (float(vehicle.heading_theta) - target_heading + math.pi) % (2 * math.pi) - math.pi
