@@ -75,6 +75,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
   env = MetaDriveEnv(config)
   camera_fov_deg = float(environment_config.get("camera_fov_deg", 40))
+  camera_position = Vec3(*map(float, environment_config.get("camera_position_m", C3_POSITION)))
+  camera_hpr = Vec3(*map(float, environment_config.get("camera_hpr_deg", C3_HPR)))
   debug_camera_path = os.environ.get("SIMLAB_CAMERA_DEBUG_PATH")
   debug_camera_metadata_path = os.environ.get("SIMLAB_CAMERA_DEBUG_METADATA_PATH") or (f"{debug_camera_path}.json" if debug_camera_path else None)
   debug_camera_after_frame = int(os.environ.get("SIMLAB_CAMERA_DEBUG_AFTER_FRAME", "0"))
@@ -233,8 +235,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     nonlocal debug_camera_captured, debug_capture_index
     cam = env.engine.sensors[cam]
     cam.get_cam().reparentTo(env.vehicle.origin)
-    cam.get_cam().setPos(C3_POSITION)
-    cam.get_cam().setHpr(C3_HPR)
+    cam.get_cam().setPos(camera_position)
+    cam.get_cam().setHpr(camera_hpr)
     img = cam.perceive(to_float=False)
     if not isinstance(img, np.ndarray):
       img = img.get() # convert cupy array to numpy
@@ -255,8 +257,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
           with open(metadata_path, "w", encoding="utf-8") as handle:
             json.dump({"simulation_frame": rk.frame, "simulation_time_s": rk.frame / 100,
                        "camera_fov_deg": camera_fov_deg, "camera_focal_length_px": W / (2.0 * math.tan(math.radians(camera_fov_deg) / 2.0)),
-                       "camera_position_m": list(map(float, C3_POSITION)),
-                       "camera_hpr_deg": list(map(float, C3_HPR))}, handle, sort_keys=True)
+                       "camera_position_m": list(map(float, camera_position)),
+                       "camera_hpr_deg": list(map(float, camera_hpr))}, handle, sort_keys=True)
     return img
 
   rk = Ratekeeper(100, None)
