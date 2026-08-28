@@ -123,16 +123,23 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     })
     return result
 
-  def reference_lane_assist(vehicle):
+  def simulator_controller(vehicle):
     assert simulator_control is not None
     lanes = list(getattr(vehicle.navigation, "current_ref_lanes", []) or [])
     lane = lanes[reference_lane_index] if 0 <= reference_lane_index < len(lanes) else None
     if lane is None:
       return 0.0, 0.0
     longitudinal, lateral = lane.local_coordinates(vehicle.position)
-    target_heading = float(lane.heading_theta_at(longitudinal + float(simulator_control["lookahead_m"])))
-    heading_error = (float(vehicle.heading_theta) - target_heading + math.pi) % (2 * math.pi) - math.pi
-    steer = -float(simulator_control["lateral_gain"]) * float(lateral) - float(simulator_control["heading_gain"]) * heading_error
+    if simulator_control["mode"] == "pure_pursuit":
+      target = lane.position(longitudinal + float(simulator_control["lookahead_m"]), 0.0)
+      delta = target - vehicle.position
+      distance = max(float(np.linalg.norm(delta)), 0.1)
+      alpha = (math.atan2(float(delta[1]), float(delta[0])) - float(vehicle.heading_theta) + math.pi) % (2 * math.pi) - math.pi
+      steer = 2.0 * math.sin(alpha) / distance * float(simulator_control["curvature_to_steer_gain"])
+    else:
+      target_heading = float(lane.heading_theta_at(longitudinal + float(simulator_control["lookahead_m"])))
+      heading_error = (float(vehicle.heading_theta) - target_heading + math.pi) % (2 * math.pi) - math.pi
+      steer = -float(simulator_control["lateral_gain"]) * float(lateral) - float(simulator_control["heading_gain"]) * heading_error
     speed_error = float(simulator_control["target_speed_mps"]) - float(np.linalg.norm(vehicle.velocity))
     return float(np.clip(steer, -0.2, 0.2)), float(np.clip(0.25 * speed_error, -1.0, 1.0))
 
@@ -202,7 +209,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
         start_time = None
 
     if simulator_control is not None:
-      steer_metadrive, gas = reference_lane_assist(env.vehicle)
+      steer_metadrive, gas = simulator_controller(env.vehicle)
     else:
       steer_metadrive = np.clip(steer_angle * 1 / (env.vehicle.MAX_STEERING * steer_ratio), -1, 1)
     normalized_steer = float(steer_metadrive)
