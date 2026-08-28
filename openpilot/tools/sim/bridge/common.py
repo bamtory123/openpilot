@@ -211,11 +211,20 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
       steer_out = steer_op if self.simulator_state.is_engaged else steer_manual
 
       if hasattr(self.world, "set_control_telemetry"):
-        model_curvature = self.simulated_car.sm['modelV2'].action.desiredCurvature
+        model = self.simulated_car.sm['modelV2']
+        model_curvature = model.action.desiredCurvature
         planner_curvature = self.simulated_car.sm['lateralManeuverPlan'].desiredCurvature
         control_curvature = self.simulated_car.sm['controlsState'].desiredCurvature
+        path_x = np.asarray(model.position.x)
+        path_y = np.asarray(model.position.y)
+        path_valid = len(path_x) == len(path_y) and len(path_x) > 1
+        path_y_20m = float(np.interp(20.0, path_x, path_y)) if path_valid else 0.0
+        path_heading_20m = float(np.arctan2(path_y_20m - path_y[0], 20.0 - path_x[0])) if path_valid else 0.0
+        path_end_x = float(path_x[-1]) if path_valid else 0.0
+        path_end_y = float(path_y[-1]) if path_valid else 0.0
         self.world.set_control_telemetry(steer_op, self.simulated_car.sm['carControl'].actuators.accel if self.simulator_state.is_engaged else 0.0,
-                                         throttle_out, brake_out, model_curvature, planner_curvature, control_curvature)
+                                         throttle_out, brake_out, model_curvature, planner_curvature, control_curvature,
+                                         path_y_20m, path_heading_20m, path_end_x, path_end_y)
 
       if self.simulator_state.is_engaged and not fault_enabled:
         self.simulated_sensors.enable_camera_transport_fault(True)
