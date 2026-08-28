@@ -56,6 +56,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   arrive_dest_done = config.pop("arrive_dest_done", True)
   simlab_config = config.pop("simlab", {})
   environment_config = simlab_config.get("environment", {})
+  simulator_control = simlab_config.get("simulator_control")
   reference_lane_index = int(environment_config.get("reference_lane_index", 0))
   seed = environment_config.get("seed")
   apply_metadrive_patches(arrive_dest_done)
@@ -98,6 +99,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "type": "vehicle_telemetry", "simulation_frame": simulation_frame, "simulation_time_s": simulation_time_s,
       "position_x_m": float(vehicle.position[0]), "position_y_m": float(vehicle.position[1]),
       "speed_mps": speed_mps, "acceleration_mps2": acceleration_mps2,
+      "simulator_control_mode": simulator_control["mode"] if simulator_control is not None else "openpilot",
       "simulator_normalized_steer": float(normalized_steer),
       "applied_steering_angle_deg": float(vehicle.steering * vehicle.MAX_STEERING),
       "actual_yaw_rate_rad_s": yaw_rate,
@@ -119,6 +121,19 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "lane_departure": abs(float(lateral)) > max(0.0, (lane_width - result["vehicle_width_m"]) / 2),
     })
     return result
+
+  def reference_lane_assist(vehicle):
+    assert simulator_control is not None
+    lanes = list(getattr(vehicle.navigation, "current_ref_lanes", []) or [])
+    lane = lanes[reference_lane_index] if 0 <= reference_lane_index < len(lanes) else None
+    if lane is None:
+      return 0.0, 0.0
+    longitudinal, lateral = lane.local_coordinates(vehicle.position)
+    target_heading = float(lane.heading_theta_at(longitudinal + float(simulator_control["lookahead_m"])))
+    heading_error = (float(vehicle.heading_theta) - target_heading + math.pi) % (2 * math.pi) - math.pi
+    steer = -float(simulator_control["lateral_gain"]) * float(lateral) - float(simulator_control["heading_gain"]) * heading_error
+    speed_error = float(simulator_control["target_speed_mps"]) - float(np.linalg.norm(vehicle.velocity))
+    return float(np.clip(steer, -0.2, 0.2)), float(np.clip(0.25 * speed_error, -1.0, 1.0))
 
   def reset():
     # The fixed seed is configured as MetaDrive's start_seed. Passing it to
@@ -160,6 +175,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
   steer_ratio = 8
   vc = [0,0]
+  steer_angle = gas = 0.0
 
   while not exit_event.is_set():
     speed_mps = float(np.linalg.norm(env.vehicle.velocity))
@@ -175,19 +191,21 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     )
     vehicle_state_send.send(vehicle_state)
 
+    should_reset = False
     if controls_recv.poll(0):
       while controls_recv.poll(0):
         steer_angle, gas, should_reset = controls_recv.recv()
 
-      steer_metadrive = steer_angle * 1 / (env.vehicle.MAX_STEERING * steer_ratio)
-      steer_metadrive = np.clip(steer_metadrive, -1, 1)
-      normalized_steer = float(steer_metadrive)
-
-      vc = [steer_metadrive, gas]
-
       if should_reset:
         lane_idx_prev = reset()
         start_time = None
+
+    if simulator_control is not None:
+      steer_metadrive, gas = reference_lane_assist(env.vehicle)
+    else:
+      steer_metadrive = np.clip(steer_angle * 1 / (env.vehicle.MAX_STEERING * steer_ratio), -1, 1)
+    normalized_steer = float(steer_metadrive)
+    vc = [steer_metadrive, gas]
 
     is_engaged = op_engaged.is_set()
     if is_engaged and start_time is None:
