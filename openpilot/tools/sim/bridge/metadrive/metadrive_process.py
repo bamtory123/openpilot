@@ -68,6 +68,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   env = MetaDriveEnv(config)
   camera_fov_deg = float(environment_config.get("camera_fov_deg", 40))
   debug_camera_path = os.environ.get("SIMLAB_CAMERA_DEBUG_PATH")
+  debug_camera_after_frame = int(os.environ.get("SIMLAB_CAMERA_DEBUG_AFTER_FRAME", "0"))
   debug_camera_captured = False
   previous_heading = None
   previous_simulation_time_s = None
@@ -149,7 +150,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     img = cam.perceive(to_float=False)
     if not isinstance(img, np.ndarray):
       img = img.get() # convert cupy array to numpy
-    if debug_camera_path and not debug_camera_captured and cam is env.engine.sensors["rgb_road"]:
+    if debug_camera_path and not debug_camera_captured and rk.frame >= debug_camera_after_frame and cam is env.engine.sensors["rgb_road"]:
       os.makedirs(os.path.dirname(debug_camera_path), exist_ok=True)
       Image.fromarray(img).save(debug_camera_path)
       debug_camera_captured = True
