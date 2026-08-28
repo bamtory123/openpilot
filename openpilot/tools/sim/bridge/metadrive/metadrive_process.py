@@ -240,7 +240,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
         os.makedirs(os.path.dirname(debug_camera_metadata_path), exist_ok=True)
         with open(debug_camera_metadata_path, "w", encoding="utf-8") as handle:
           json.dump({"simulation_frame": rk.frame, "simulation_time_s": rk.frame / 100,
-                     "camera_fov_deg": camera_fov_deg, "camera_position_m": list(map(float, C3_POSITION)),
+                     "camera_fov_deg": camera_fov_deg, "camera_focal_length_px": W / (2.0 * math.tan(math.radians(camera_fov_deg) / 2.0)),
+                     "camera_position_m": list(map(float, C3_POSITION)),
                      "camera_hpr_deg": list(map(float, C3_HPR))}, handle, sort_keys=True)
       debug_camera_captured = True
     return img
