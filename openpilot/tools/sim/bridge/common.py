@@ -3,6 +3,7 @@ import threading
 import functools
 import time
 import numpy as np
+from openpilot.common.transformations.camera import DEVICE_CAMERAS
 
 from collections import namedtuple
 from enum import Enum
@@ -227,11 +228,15 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
         path_end_speed = float(model.velocity.x[-1]) if len(model.velocity.x) else None
         calibration = self.simulated_car.sm['extrinsicsCalibration']
         calibration_rpy = list(calibration.rpyCalib) if len(calibration.rpyCalib) == 3 else [None, None, None]
+        device_type = str(self.simulated_car.sm['deviceState'].deviceType)
+        camera_sensor = str(self.simulated_car.sm['narrowRoadCameraState'].sensor)
+        camera_config = DEVICE_CAMERAS[(device_type, camera_sensor)].narrow_road
         self.world.set_control_telemetry(steer_op, self.simulated_car.sm['carControl'].actuators.accel if self.simulator_state.is_engaged else 0.0,
                                          throttle_out, brake_out, model_curvature, planner_curvature, control_curvature,
                                          path_y_20m, path_heading_20m, path_end_x, path_end_y, path_end_heading, path_end_speed,
                                          self.simulated_car.sm.valid['modelV2'], model.frameId, model.frameAge,
-                                         model.frameDropPerc, model.modelExecutionTime, calibration_rpy, str(calibration.calStatus))
+                                         model.frameDropPerc, model.modelExecutionTime, calibration_rpy, str(calibration.calStatus),
+                                         device_type, camera_sensor, camera_config.width, camera_config.height, camera_config.focal_length)
 
       if self.simulator_state.is_engaged and not fault_enabled:
         self.simulated_sensors.enable_camera_transport_fault(True)
