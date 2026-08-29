@@ -64,6 +64,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   simlab_config = config.pop("simlab", {})
   environment_config = simlab_config.get("environment", {})
   simulator_control = simlab_config.get("simulator_control")
+  specialist_dataset = simlab_config.get("specialist_dataset")
   reference_lane_index = int(environment_config.get("reference_lane_index", 0))
   seed = environment_config.get("seed")
   apply_metadrive_patches(arrive_dest_done)
@@ -138,6 +139,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "route_progress_m": None, "lateral_error_m": None, "heading_error_rad": None,
       "lane_width_m": None, "vehicle_width_m": vehicle_width,
       "lane_departure": False, "collision": bool(getattr(vehicle, "crash_vehicle", False) or getattr(vehicle, "crash_object", False)),
+      "specialist_teacher_curvature_1pm": None, "specialist_teacher_normalized_steer": None,
     }
     if lane is None:
       return result
@@ -157,6 +159,17 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "reference_curvature_1pm": ((float(lane.heading_theta_at(longitudinal + 1.0)) - float(lane.heading_theta_at(longitudinal - 1.0)) + math.pi) % (2 * math.pi) - math.pi) / 2.0,
       "lane_departure": abs(float(lateral)) > max(0.0, (lane_width - result["vehicle_width_m"]) / 2),
     })
+    if specialist_dataset is not None:
+      teacher = specialist_dataset["teacher"]
+      target = lane.position(longitudinal + float(teacher["lookahead_m"]), 0.0)
+      delta = np.asarray(target) - np.asarray(vehicle.position)
+      distance = max(float(np.linalg.norm(delta)), 0.1)
+      if velocity_direction is not None:
+        alpha = world_signed_angle(velocity_direction, delta)
+        teacher_curvature = 2.0 * math.sin(alpha) / distance
+        result["specialist_teacher_curvature_1pm"] = teacher_curvature
+        result["specialist_teacher_normalized_steer"] = float(np.clip(
+          teacher_curvature * float(teacher["curvature_to_steer_gain"]), -0.2, 0.2))
     if tangent_norm > 0.0:
       result["reference_tangent_world_x"] = float(tangent[0] / tangent_norm)
       result["reference_tangent_world_y"] = float(tangent[1] / tangent_norm)
