@@ -228,18 +228,23 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return float(np.clip(steer, -0.2, 0.2)), float(np.clip(0.25 * speed_error, -1.0, 1.0))
 
   def specialist_controller(image):
-    nonlocal specialist_prediction
-    specialist_prediction = 0.0 if image is None else specialist_replay.predict(image)
+    nonlocal specialist_prediction, specialist_last_image
+    if image is not None and image is not specialist_last_image:
+      specialist_prediction = specialist_replay.predict(image)
+      specialist_last_image = image
     speed_error = float(specialist_replay_config["target_speed_mps"]) - float(np.linalg.norm(env.vehicle.velocity))
     return specialist_prediction, float(np.clip(0.25 * speed_error, -1.0, 1.0))
 
   def reset():
-    nonlocal previous_velocity_heading, previous_simulation_time_s
+    nonlocal previous_velocity_heading, previous_simulation_time_s, specialist_last_image
     # The fixed seed is configured as MetaDrive's start_seed. Passing it to
     # reset() would be interpreted as a bounded scenario index on 0.4.2.3.
     env.reset()
     previous_velocity_heading = None
     previous_simulation_time_s = None
+    specialist_last_image = None
+    if specialist_replay is not None:
+      specialist_replay.reset()
     env.vehicle.config["max_speed_km_h"] = 1000
     lane_idx_prev, _ = get_current_lane_info(env.vehicle)
 
@@ -295,6 +300,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   vc = [0,0]
   steer_angle = gas = 0.0
   latest_road_image = None
+  specialist_last_image = None
 
   while not exit_event.is_set():
     speed_mps = float(np.linalg.norm(env.vehicle.velocity))

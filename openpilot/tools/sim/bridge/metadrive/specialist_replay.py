@@ -41,3 +41,7 @@ class SpecialistReplay:
       current_features = np.concatenate((current_features, current_features - previous_features))
     features = (current_features - self.mean) / self.scale
     return float(np.clip(np.append(features, 1.0) @ self.weights, -0.2, 0.2))
+
+  def reset(self):
+    if self.history is not None:
+      self.history.clear()
