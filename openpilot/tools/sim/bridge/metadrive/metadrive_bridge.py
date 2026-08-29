@@ -26,7 +26,7 @@ def curve_block(length, angle=45, direction=0):
     "dir": direction
   }
 
-def create_map(track_size=60):
+def create_map(track_size=60, curve_direction=0):
   curve_len = track_size * 2
   return {
     "type": MapGenerateMethod.PG_MAP_FILE,
@@ -35,13 +35,13 @@ def create_map(track_size=60):
     "config": [
       None,
       straight_block(track_size),
-      curve_block(curve_len, 90),
+      curve_block(curve_len, 90, curve_direction),
       straight_block(track_size),
-      curve_block(curve_len, 90),
+      curve_block(curve_len, 90, curve_direction),
       straight_block(track_size),
-      curve_block(curve_len, 90),
+      curve_block(curve_len, 90, curve_direction),
       straight_block(track_size),
-      curve_block(curve_len, 90),
+      curve_block(curve_len, 90, curve_direction),
     ]
   }
 
@@ -84,7 +84,7 @@ class MetaDriveBridge(SimulatorBridge):
       "arrive_dest_done": False,
       "traffic_density": 0.0, # traffic is incredibly expensive
       "random_spawn_lane_index": False,
-      "map_config": create_map(),
+      "map_config": create_map(curve_direction=int(self.simlab_config.get("environment", {}).get("map_curve_direction", 0))),
       "decision_repeat": 1,
       "physics_world_step_size": self.TICKS_PER_FRAME/100,
       "preload_models": False,
