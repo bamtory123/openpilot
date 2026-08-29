@@ -229,7 +229,9 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
   def specialist_controller(image):
     nonlocal specialist_prediction, specialist_last_image
-    if image is not None and image is not specialist_last_image:
+    if image is None:
+      specialist_prediction = 0.0
+    elif image is not specialist_last_image:
       specialist_prediction = specialist_replay.predict(image)
       specialist_last_image = image
     speed_error = float(specialist_replay_config["target_speed_mps"]) - float(np.linalg.norm(env.vehicle.velocity))
