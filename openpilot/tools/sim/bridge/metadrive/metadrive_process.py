@@ -18,6 +18,7 @@ from openpilot.common.realtime import Ratekeeper
 
 from openpilot.tools.sim.lib.common import vec3
 from openpilot.tools.sim.lib.camerad import W, H
+from openpilot.tools.sim.bridge.metadrive.specialist_replay import SpecialistReplay
 
 C3_POSITION = Vec3(0.0, 0, 1.22)
 C3_HPR = Vec3(0, 0,0)
@@ -65,6 +66,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   environment_config = simlab_config.get("environment", {})
   simulator_control = simlab_config.get("simulator_control")
   specialist_dataset = simlab_config.get("specialist_dataset")
+  specialist_replay_config = simlab_config.get("specialist_replay")
   reference_lane_index = int(environment_config.get("reference_lane_index", 0))
   seed = environment_config.get("seed")
   apply_metadrive_patches(arrive_dest_done)
@@ -75,6 +77,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     wide_road_image = np.frombuffer(wide_camera_array.get_obj(), dtype=np.uint8).reshape((H, W, 3))
 
   env = MetaDriveEnv(config)
+  specialist_replay = SpecialistReplay(specialist_replay_config["artifact_path"]) if specialist_replay_config is not None else None
   camera_fov_deg = float(environment_config.get("camera_fov_deg", 40))
   camera_gamma = float(environment_config.get("camera_gamma", 1.0))
   camera_position = Vec3(*map(float, environment_config.get("camera_position_m", C3_POSITION)))
@@ -98,6 +101,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     _, lane_info, on_lane = vehicle.navigation._get_current_lane(vehicle)
     lane_idx = lane_info[2] if lane_info is not None else None
     return lane_idx, on_lane
+
+  specialist_prediction = None
 
   def reference_lane_telemetry(vehicle, simulation_frame, simulation_time_s, acceleration_mps2):
     nonlocal previous_velocity_heading, previous_simulation_time_s
@@ -123,7 +128,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "type": "vehicle_telemetry", "simulation_frame": simulation_frame, "simulation_time_s": simulation_time_s,
       "position_x_m": float(vehicle.position[0]), "position_y_m": float(vehicle.position[1]),
       "speed_mps": speed_mps, "acceleration_mps2": acceleration_mps2,
-      "simulator_control_mode": simulator_control["mode"] if simulator_control is not None else "openpilot",
+      "simulator_control_mode": "specialist_replay" if specialist_replay is not None else (simulator_control["mode"] if simulator_control is not None else "openpilot"),
+      "specialist_replay_normalized_steer": specialist_prediction,
       "simulator_normalized_steer": float(normalized_steer),
       "applied_steering_angle_deg": float(vehicle.steering * vehicle.MAX_STEERING),
       "actual_yaw_rate_rad_s": yaw_rate,
@@ -221,6 +227,12 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     speed_error = float(simulator_control["target_speed_mps"]) - float(np.linalg.norm(vehicle.velocity))
     return float(np.clip(steer, -0.2, 0.2)), float(np.clip(0.25 * speed_error, -1.0, 1.0))
 
+  def specialist_controller(image):
+    nonlocal specialist_prediction
+    specialist_prediction = 0.0 if image is None else specialist_replay.predict(image)
+    speed_error = float(specialist_replay_config["target_speed_mps"]) - float(np.linalg.norm(env.vehicle.velocity))
+    return specialist_prediction, float(np.clip(0.25 * speed_error, -1.0, 1.0))
+
   def reset():
     nonlocal previous_velocity_heading, previous_simulation_time_s
     # The fixed seed is configured as MetaDrive's start_seed. Passing it to
@@ -282,6 +294,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   steer_ratio = 8
   vc = [0,0]
   steer_angle = gas = 0.0
+  latest_road_image = None
 
   while not exit_event.is_set():
     speed_mps = float(np.linalg.norm(env.vehicle.velocity))
@@ -308,6 +321,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
     if simulator_control is not None:
       steer_metadrive, gas = simulator_controller(env.vehicle)
+    elif specialist_replay is not None:
+      steer_metadrive, gas = specialist_controller(latest_road_image)
     else:
       steer_metadrive = np.clip(steer_angle * 1 / (env.vehicle.MAX_STEERING * steer_ratio), -1, 1)
     normalized_steer = float(steer_metadrive)
@@ -341,7 +356,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
       if dual_camera:
         wide_road_image[...] = get_cam_as_rgb("rgb_wide")
-      road_image[...] = get_cam_as_rgb("rgb_road")
+      latest_road_image = get_cam_as_rgb("rgb_road")
+      road_image[...] = latest_road_image
       image_lock.release()
 
     rk.keep_time()
