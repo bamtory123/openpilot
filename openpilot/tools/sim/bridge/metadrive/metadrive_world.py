@@ -76,7 +76,8 @@ class MetaDriveWorld(World):
                             model_path_heading_20m_rad, model_path_end_x_m, model_path_end_y_m,
                             model_path_end_heading_rad, model_path_end_speed_mps, model_valid, model_frame_id,
                             model_frame_age, model_frame_drop_perc, model_execution_time_s, calibration_rpy_rad, calibration_status,
-                            model_device_type, model_camera_sensor, model_camera_width_px, model_camera_height_px, model_camera_focal_length_px):
+                            model_device_type, model_camera_sensor, model_camera_width_px, model_camera_height_px, model_camera_focal_length_px,
+                            model_left_lane_prob, model_right_lane_prob, model_left_lane_y0_m, model_right_lane_y0_m):
     self._control_telemetry = {
       "op_steering_angle_cmd_deg": steering_cmd_deg,
       "op_accel_cmd_mps2": accel_cmd_mps2,
@@ -105,6 +106,10 @@ class MetaDriveWorld(World):
       "model_camera_width_px": model_camera_width_px,
       "model_camera_height_px": model_camera_height_px,
       "model_camera_focal_length_px": model_camera_focal_length_px,
+      "model_left_lane_prob": model_left_lane_prob,
+      "model_right_lane_prob": model_right_lane_prob,
+      "model_left_lane_y0_m": model_left_lane_y0_m,
+      "model_right_lane_y0_m": model_right_lane_y0_m,
     }
 
   def apply_controls(self, steer_angle, throttle_out, brake_out):
