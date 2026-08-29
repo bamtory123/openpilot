@@ -70,6 +70,7 @@ class MetaDriveBridge(SimulatorBridge):
         "enable_reverse": False,
         "render_vehicle": False,
         "image_source": "rgb_road",
+        "show_navi_mark": bool(self.simlab_config.get("environment", {}).get("show_navi_mark", True)),
       },
       "sensors": sensors,
       # Keep simulator images in host memory. Under WSL, MetaDrive's CUDA image
