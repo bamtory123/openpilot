@@ -231,8 +231,12 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
         device_type = str(self.simulated_car.sm['deviceState'].deviceType)
         camera_sensor = str(self.simulated_car.sm['narrowRoadCameraState'].sensor)
         camera_config = DEVICE_CAMERAS.get((device_type, camera_sensor))
-        left_lane = model.laneLines[1]
-        right_lane = model.laneLines[2]
+        left_lane = model.laneLines[1] if len(model.laneLines) > 1 else None
+        right_lane = model.laneLines[2] if len(model.laneLines) > 2 else None
+        left_lane_prob = model.laneLineProbs[1] if len(model.laneLineProbs) > 1 else None
+        right_lane_prob = model.laneLineProbs[2] if len(model.laneLineProbs) > 2 else None
+        left_lane_y0 = left_lane.y[0] if left_lane and len(left_lane.y) else None
+        right_lane_y0 = right_lane.y[0] if right_lane and len(right_lane.y) else None
         self.world.set_control_telemetry(steer_op, self.simulated_car.sm['carControl'].actuators.accel if self.simulator_state.is_engaged else 0.0,
                                          throttle_out, brake_out, model_curvature, planner_curvature, control_curvature,
                                          path_y_20m, path_heading_20m, path_end_x, path_end_y, path_end_heading, path_end_speed,
@@ -241,7 +245,7 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
                                          device_type, camera_sensor, camera_config.narrow_road.width if camera_config else None,
                                          camera_config.narrow_road.height if camera_config else None,
                                          camera_config.narrow_road.focal_length if camera_config else None,
-                                         model.laneLineProbs[1], model.laneLineProbs[2], left_lane.y[0], right_lane.y[0])
+                                         left_lane_prob, right_lane_prob, left_lane_y0, right_lane_y0)
 
       if self.simulator_state.is_engaged and not fault_enabled:
         self.simulated_sensors.enable_camera_transport_fault(True)
