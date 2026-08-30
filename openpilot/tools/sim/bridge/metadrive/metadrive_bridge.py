@@ -90,7 +90,6 @@ class MetaDriveBridge(SimulatorBridge):
       "crash_object_done": False,
       "arrive_dest_done": False,
       "traffic_density": float(self.simlab_config.get("environment", {}).get("traffic_density", 0.0)),
-      "traffic_vehicle_config": {"render_vehicle": False},
       "random_spawn_lane_index": False,
       "map_config": create_map(track_size=int(self.simlab_config.get("environment", {}).get("map_track_size_m", 60)),
                                curve_direction=int(self.simlab_config.get("environment", {}).get("map_curve_direction", 0)),
