@@ -26,8 +26,14 @@ def curve_block(length, angle=45, direction=0):
     "dir": direction
   }
 
-def create_map(track_size=60, curve_direction=0):
+def create_map(track_size=60, curve_direction=0, route_profile="loop"):
   curve_len = track_size * 2
+  if route_profile == "serpentine":
+    directions = (curve_direction, 1 - curve_direction, 1 - curve_direction, curve_direction)
+  elif route_profile == "loop":
+    directions = (curve_direction,) * 4
+  else:
+    raise ValueError(f"unsupported MetaDrive route profile: {route_profile}")
   return {
     "type": MapGenerateMethod.PG_MAP_FILE,
     "lane_num": 2,
@@ -35,13 +41,13 @@ def create_map(track_size=60, curve_direction=0):
     "config": [
       None,
       straight_block(track_size),
-      curve_block(curve_len, 90, curve_direction),
+      curve_block(curve_len, 90, directions[0]),
       straight_block(track_size),
-      curve_block(curve_len, 90, curve_direction),
+      curve_block(curve_len, 90, directions[1]),
       straight_block(track_size),
-      curve_block(curve_len, 90, curve_direction),
+      curve_block(curve_len, 90, directions[2]),
       straight_block(track_size),
-      curve_block(curve_len, 90, curve_direction),
+      curve_block(curve_len, 90, directions[3]),
     ]
   }
 
@@ -86,7 +92,8 @@ class MetaDriveBridge(SimulatorBridge):
       "traffic_density": 0.0, # traffic is incredibly expensive
       "random_spawn_lane_index": False,
       "map_config": create_map(track_size=int(self.simlab_config.get("environment", {}).get("map_track_size_m", 60)),
-                               curve_direction=int(self.simlab_config.get("environment", {}).get("map_curve_direction", 0))),
+                               curve_direction=int(self.simlab_config.get("environment", {}).get("map_curve_direction", 0)),
+                               route_profile="serpentine" if self.simlab_config.get("environment", {}).get("map_id") == "openpilot_serpentine_v1" else "loop"),
       "decision_repeat": 1,
       "physics_world_step_size": self.TICKS_PER_FRAME/100,
       "preload_models": False,
