@@ -85,7 +85,8 @@ class MetaDriveBridge(SimulatorBridge):
       "arrive_dest_done": False,
       "traffic_density": 0.0, # traffic is incredibly expensive
       "random_spawn_lane_index": False,
-      "map_config": create_map(curve_direction=int(self.simlab_config.get("environment", {}).get("map_curve_direction", 0))),
+      "map_config": create_map(track_size=int(self.simlab_config.get("environment", {}).get("map_track_size_m", 60)),
+                               curve_direction=int(self.simlab_config.get("environment", {}).get("map_curve_direction", 0))),
       "decision_repeat": 1,
       "physics_world_step_size": self.TICKS_PER_FRAME/100,
       "preload_models": False,
