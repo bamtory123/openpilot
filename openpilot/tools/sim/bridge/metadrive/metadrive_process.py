@@ -103,6 +103,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return lane_idx, on_lane
 
   specialist_prediction = None
+  lead_vehicle = None
 
   def reference_lane_telemetry(vehicle, simulation_frame, simulation_time_s, acceleration_mps2):
     nonlocal previous_velocity_heading, previous_simulation_time_s
@@ -127,6 +128,9 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     traffic_manager = getattr(env.engine, "traffic_manager", None)
     traffic_vehicle_count = int(traffic_manager.get_vehicle_num()) if traffic_manager is not None else 0
     active_traffic = list(getattr(traffic_manager, "traffic_vehicles", []) or []) if traffic_manager is not None else []
+    if lead_vehicle is not None:
+      traffic_vehicle_count += 1
+      active_traffic.append(lead_vehicle)
     traffic_distances = [float(np.linalg.norm(np.asarray(other.position[:2]) - np.asarray(vehicle.position[:2]))) for other in active_traffic]
     nearest_traffic = active_traffic[int(np.argmin(traffic_distances))] if traffic_distances else None
     nearest_distance = min(traffic_distances) if traffic_distances else None
@@ -254,10 +258,23 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return specialist_prediction, float(np.clip(0.25 * speed_error, -1.0, 1.0))
 
   def reset():
-    nonlocal previous_velocity_heading, previous_simulation_time_s, specialist_last_image
+    nonlocal previous_velocity_heading, previous_simulation_time_s, specialist_last_image, lead_vehicle
     # The fixed seed is configured as MetaDrive's start_seed. Passing it to
     # reset() would be interpreted as a bounded scenario index on 0.4.2.3.
     env.reset()
+    lead_vehicle = None
+    lead_config = environment_config.get("lead_vehicle")
+    if lead_config is not None:
+      from metadrive.component.vehicle.vehicle_type import StaticDefaultVehicle
+      lanes = list(getattr(env.vehicle.navigation, "current_ref_lanes", []) or [])
+      lane = lanes[reference_lane_index] if 0 <= reference_lane_index < len(lanes) else None
+      if lane is None:
+        raise RuntimeError("lead vehicle spawn requires the configured reference lane")
+      longitudinal, _ = lane.local_coordinates(env.vehicle.position)
+      lead_vehicle = env.engine.spawn_object(StaticDefaultVehicle, vehicle_config={
+        "spawn_lane_index": lane.index, "spawn_longitude": longitudinal + float(lead_config["gap_m"]),
+        "render_vehicle": False, "enable_reverse": False,
+      })
     previous_velocity_heading = None
     previous_simulation_time_s = None
     specialist_last_image = None
