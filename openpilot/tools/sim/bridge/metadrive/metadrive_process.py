@@ -103,7 +103,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return lane_idx, on_lane
 
   specialist_prediction = None
-  lead_vehicle = None
+  lead_vehicle = lead_visual_proxy = None
 
   def reference_lane_telemetry(vehicle, simulation_frame, simulation_time_s, acceleration_mps2):
     nonlocal previous_velocity_heading, previous_simulation_time_s
@@ -258,11 +258,11 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return specialist_prediction, float(np.clip(0.25 * speed_error, -1.0, 1.0))
 
   def reset():
-    nonlocal previous_velocity_heading, previous_simulation_time_s, specialist_last_image, lead_vehicle
+    nonlocal previous_velocity_heading, previous_simulation_time_s, specialist_last_image, lead_vehicle, lead_visual_proxy
     # The fixed seed is configured as MetaDrive's start_seed. Passing it to
     # reset() would be interpreted as a bounded scenario index on 0.4.2.3.
     env.reset()
-    lead_vehicle = None
+    lead_vehicle = lead_visual_proxy = None
     lead_config = environment_config.get("lead_vehicle")
     if lead_config is not None:
       from metadrive.component.vehicle.vehicle_type import StaticDefaultVehicle
@@ -275,6 +275,12 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
         "spawn_lane_index": lane.index, "spawn_longitude": longitudinal + float(lead_config["gap_m"]),
         "render_vehicle": False, "enable_reverse": False,
       })
+      if lead_config.get("visual_proxy") == "box":
+        from metadrive.engine.asset_loader import AssetLoader
+        lead_visual_proxy = env.engine.loader.loadModel(AssetLoader.file_path("models", "box.bam"))
+        lead_visual_proxy.reparentTo(lead_vehicle.origin)
+        lead_visual_proxy.setPos(0, 0, 1.0)
+        lead_visual_proxy.setScale(1.0, 2.3, 0.8)
     previous_velocity_heading = None
     previous_simulation_time_s = None
     specialist_last_image = None
