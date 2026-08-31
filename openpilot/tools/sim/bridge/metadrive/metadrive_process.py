@@ -126,6 +126,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     lane_idx, on_lane = get_current_lane_info(vehicle)
     traffic_manager = getattr(env.engine, "traffic_manager", None)
     traffic_vehicle_count = int(traffic_manager.get_vehicle_num()) if traffic_manager is not None else 0
+    active_traffic = list(getattr(traffic_manager, "traffic_vehicles", []) or []) if traffic_manager is not None else []
+    traffic_distances = [float(np.linalg.norm(np.asarray(other.position[:2]) - np.asarray(vehicle.position[:2]))) for other in active_traffic]
     result = {
       "type": "vehicle_telemetry", "simulation_frame": simulation_frame, "simulation_time_s": simulation_time_s,
       "position_x_m": float(vehicle.position[0]), "position_y_m": float(vehicle.position[1]),
@@ -147,6 +149,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "route_progress_m": None, "lateral_error_m": None, "heading_error_rad": None,
       "lane_width_m": None, "vehicle_width_m": vehicle_width,
       "traffic_vehicle_count": traffic_vehicle_count,
+      "traffic_active_vehicle_count": len(active_traffic),
+      "traffic_nearest_distance_m": min(traffic_distances) if traffic_distances else None,
       "lane_departure": False, "collision": bool(getattr(vehicle, "crash_vehicle", False) or getattr(vehicle, "crash_object", False)),
       "specialist_teacher_curvature_1pm": None, "specialist_teacher_normalized_steer": None,
     }
