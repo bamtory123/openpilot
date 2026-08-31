@@ -273,7 +273,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       longitudinal, _ = lane.local_coordinates(env.vehicle.position)
       lead_vehicle = env.engine.spawn_object(StaticDefaultVehicle, vehicle_config={
         "spawn_lane_index": lane.index, "spawn_longitude": longitudinal + float(lead_config["gap_m"]),
-        "render_vehicle": False, "enable_reverse": False,
+        "render_vehicle": True, "enable_reverse": False,
       })
     previous_velocity_heading = None
     previous_simulation_time_s = None
