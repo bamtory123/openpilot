@@ -273,7 +273,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       longitudinal, _ = lane.local_coordinates(env.vehicle.position)
       lead_vehicle = env.engine.spawn_object(StaticDefaultVehicle, vehicle_config={
         "spawn_lane_index": lane.index, "spawn_longitude": longitudinal + float(lead_config["gap_m"]),
-        "render_vehicle": False, "enable_reverse": False,
+        "render_vehicle": bool(lead_config.get("render_vehicle", False)), "enable_reverse": False,
       })
       if lead_config.get("visual_proxy") == "box":
         from metadrive.engine.asset_loader import AssetLoader
