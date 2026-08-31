@@ -318,7 +318,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
           camera_point = camera.getRelativePoint(env.engine.render, world)
           screen = Point2()
           if camera.node().getLens().project(camera_point, screen):
-            projected.append(((screen.x + 1.0) * W / 2.0, (1.0 - screen.y) * H / 2.0))
+            projected.append(((screen.x + 1.0) * W / 2.0, (screen.y + 1.0) * H / 2.0))
     if not projected:
       return None
     xs, ys = zip(*projected)
