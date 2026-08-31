@@ -5,7 +5,7 @@ import json
 import numpy as np
 
 from collections import namedtuple
-from panda3d.core import Vec3
+from panda3d.core import Point2, Point3, Vec3
 from PIL import Image
 from multiprocessing.connection import Connection
 
@@ -303,6 +303,28 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   start_time = None
   previous_speed = 0.0
 
+  def visual_proxy_bbox(camera):
+    if lead_visual_proxy is None:
+      return None
+    bounds = lead_visual_proxy.getTightBounds()
+    if bounds is None:
+      return None
+    lower, upper = bounds
+    projected = []
+    for x in (lower.x, upper.x):
+      for y in (lower.y, upper.y):
+        for z in (lower.z, upper.z):
+          world = env.engine.render.getRelativePoint(lead_visual_proxy, Point3(x, y, z))
+          camera_point = camera.getRelativePoint(env.engine.render, world)
+          screen = Point2()
+          if camera.node().getLens().project(camera_point, screen):
+            projected.append(((screen.x + 1.0) * W / 2.0, (1.0 - screen.y) * H / 2.0))
+    if not projected:
+      return None
+    xs, ys = zip(*projected)
+    return [float(max(0.0, min(xs))), float(max(0.0, min(ys))),
+            float(min(float(W), max(xs))), float(min(float(H), max(ys)))]
+
   def get_cam_as_rgb(cam):
     nonlocal debug_camera_captured, debug_capture_index
     cam = env.engine.sensors[cam]
@@ -332,7 +354,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
             json.dump({"simulation_frame": rk.frame, "simulation_time_s": rk.frame / 100,
                        "camera_fov_deg": camera_fov_deg, "camera_focal_length_px": W / (2.0 * math.tan(math.radians(camera_fov_deg) / 2.0)),
                        "camera_position_m": list(map(float, camera_position)),
-                       "camera_hpr_deg": list(map(float, camera_hpr)), "camera_gamma": camera_gamma}, handle, sort_keys=True)
+                       "camera_hpr_deg": list(map(float, camera_hpr)), "camera_gamma": camera_gamma,
+                       "static_obstacle_bbox_xyxy_px": visual_proxy_bbox(cam.get_cam())}, handle, sort_keys=True)
     return img
 
   rk = Ratekeeper(100, None)
