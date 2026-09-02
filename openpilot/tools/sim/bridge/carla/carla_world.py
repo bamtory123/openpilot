@@ -20,6 +20,7 @@ HONDA_CIVIC_2022_STEER_RATIO = 15.38
 # C3 narrow-road camera focal length (2648 px at the 1928 px simulator width).
 # CARLA defaults to 90°, which presents a materially different road geometry.
 NARROW_ROAD_FOV_DEG = narrow_road_fov_deg(W)
+ROUTE_DEPARTURE_M = 1.5
 
 
 class CarlaWorld(World):
@@ -58,7 +59,9 @@ class CarlaWorld(World):
     self._engaged_at: float | None = None
     self._last_yaw_deg: float | None = None
     self._last_frame = -1
+    self._route_cursor = 0
     self._physics: dict[str, Any] = {}
+    self._route_lateral_error_m: float | None = None
     self._control = carla.VehicleControl()
     self._command: dict[str, Any] = {}
     self._spawn_ego()
@@ -165,14 +168,42 @@ class CarlaWorld(World):
       "simulation_frame": snapshot.frame, "simulation_time_s": snapshot.timestamp.elapsed_seconds,
       "speed_mps": speed, "yaw_deg": transform.rotation.yaw,
       "yaw_rate_radps": yaw_rate, "actual_curvature_1pm": yaw_rate / speed if yaw_rate is not None and speed > 0.1 else None,
-      "carla_x_m": transform.location.x, "carla_y_m": transform.location.y}
+      "carla_x_m": transform.location.x, "carla_y_m": transform.location.y, **self._route_ground_truth(transform)}
+
+  def _route_ground_truth(self, transform):
+    """Route-asset ground truth for diagnostics only; never control input."""
+    location = transform.location
+    points = self.route.points
+    low, high = max(0, self._route_cursor - 8), min(len(points), self._route_cursor + 40)
+    self._route_cursor = min(range(low, high), key=lambda index: math.hypot(location.x - points[index][0], location.y - points[index][1]))
+    x, y, _, _, yaw, _ = points[self._route_cursor]
+    yaw_rad = math.radians(yaw)
+    dx, dy = location.x - x, location.y - y
+    lateral_error = dx * -math.sin(yaw_rad) + dy * math.cos(yaw_rad)
+    self._route_lateral_error_m = lateral_error
+    heading_error = (transform.rotation.yaw - yaw + 180.0) % 360.0 - 180.0
+    before, after = max(0, self._route_cursor - 2), min(len(points) - 1, self._route_cursor + 10)
+    route_curvature = None
+    if after > before:
+      delta_yaw = (points[after][4] - points[before][4] + 180.0) % 360.0 - 180.0
+      route_curvature = math.radians(delta_yaw) / ((after - before) * 2.0)
+    return {"route_progress_m": self._route_cursor * 2.0, "route_lateral_error_m": lateral_error,
+            "route_heading_error_deg": heading_error, "route_reference_curvature_1pm": route_curvature}
 
   def read_state(self):
     if not self._collisions.empty():
       self.status_q.put(QueueMessage(QueueMessageType.TERMINATION_INFO, {"collision": True}))
       self.exit_event.set()
-    if not self._lanes.empty():
-      self.status_q.put(QueueMessage(QueueMessageType.TERMINATION_INFO, {"lane_departure": True}))
+    lane_invasions = 0
+    while not self._lanes.empty():
+      self._lanes.get_nowait()
+      lane_invasions += 1
+    if lane_invasions:
+      self.status_q.put(QueueMessage(QueueMessageType.TELEMETRY, {"type": "lane_invasion", "count": lane_invasions,
+                        "route_lateral_error_m": self._route_lateral_error_m}))
+    if self._engaged_at is not None and self._route_lateral_error_m is not None and abs(self._route_lateral_error_m) > ROUTE_DEPARTURE_M:
+      self.status_q.put(QueueMessage(QueueMessageType.TERMINATION_INFO, {"lane_departure": True,
+                        "route_lateral_error_m": self._route_lateral_error_m, "threshold_m": ROUTE_DEPARTURE_M}))
       self.exit_event.set()
     if self.test_run and self._engaged_at is not None and time.monotonic() - self._engaged_at >= self.test_duration:
       self.status_q.put(QueueMessage(QueueMessageType.TERMINATION_INFO, {"timeout": True}))
