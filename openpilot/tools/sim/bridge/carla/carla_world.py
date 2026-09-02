@@ -79,12 +79,21 @@ class CarlaWorld(World):
     blueprints = self.world.get_blueprint_library()
     vehicle_bp = blueprints.filter("vehicle.tesla.model3")[0]
     spawn = self._transform(self.route.points[0])
+    # Waypoints lie on the road surface; CARLA vehicle spawning needs a small
+    # clearance above it. This changes neither frozen XY nor yaw alignment.
+    spawn.location.z += 0.5
     self.ego = self.world.try_spawn_actor(vehicle_bp, spawn)
     if self.ego is None:
       raise RuntimeError("route asset spawn is occupied")
-    if self.ego.get_location().distance(spawn.location) > 1.0:
+    # In synchronous mode CARLA does not expose the finalized actor transform
+    # until the first world tick.
+    self.world.tick()
+    actual = self.ego.get_transform()
+    xy_error = math.hypot(actual.location.x - spawn.location.x, actual.location.y - spawn.location.y)
+    yaw_error = abs((actual.rotation.yaw - spawn.rotation.yaw + 180.0) % 360.0 - 180.0)
+    if xy_error > 1.0 or yaw_error > 5.0:
       self.ego.destroy()
-      raise RuntimeError("route asset spawn did not align with ego")
+      raise RuntimeError(f"route asset spawn did not align with ego: xy={xy_error:.3f}m yaw={yaw_error:.3f}deg")
     self._actors.append(self.ego)
     limits = [wheel.max_steer_angle for wheel in self.ego.get_physics_control().wheels if wheel.max_steer_angle > 0]
     if not limits:
