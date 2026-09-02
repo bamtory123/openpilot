@@ -10,12 +10,16 @@ import numpy as np
 
 from openpilot.tools.sim.bridge.carla.route_asset import load_route_asset
 from openpilot.tools.sim.bridge.carla.control import normalized_steer
+from openpilot.tools.sim.bridge.carla.optics import narrow_road_fov_deg
 from openpilot.tools.sim.bridge.common import QueueMessage, QueueMessageType
 from openpilot.tools.sim.lib.camerad import H, W
 from openpilot.tools.sim.lib.common import SimulatorState, World, vec3
 
 
 HONDA_CIVIC_2022_STEER_RATIO = 15.38
+# C3 narrow-road camera focal length (2648 px at the 1928 px simulator width).
+# CARLA defaults to 90°, which presents a materially different road geometry.
+NARROW_ROAD_FOV_DEG = narrow_road_fov_deg(W)
 
 
 class CarlaWorld(World):
@@ -102,6 +106,7 @@ class CarlaWorld(World):
     camera_bp = blueprints.find("sensor.camera.rgb")
     camera_bp.set_attribute("image_size_x", str(W))
     camera_bp.set_attribute("image_size_y", str(H))
+    camera_bp.set_attribute("fov", f"{NARROW_ROAD_FOV_DEG:.6f}")
     camera_bp.set_attribute("sensor_tick", "0.05")
     camera = self.world.spawn_actor(camera_bp, self.carla.Transform(self.carla.Location(x=1.45, z=1.35)), attach_to=self.ego)
     camera.listen(self._on_camera)
@@ -118,7 +123,9 @@ class CarlaWorld(World):
     self._put_latest(self._frames, (image.frame, time.monotonic_ns(), rgb))
 
   def apply_controls(self, steer_angle, throttle_out, brake_out):
-    steer = normalized_steer(float(steer_angle), self._steering_wheel_limit_deg)
+    # openpilot desired curvature/steering-wheel convention is opposite to
+    # CARLA's normalized road-wheel steering convention.
+    steer = normalized_steer(-float(steer_angle), self._steering_wheel_limit_deg)
     self._control = self.carla.VehicleControl(steer=steer, throttle=float(np.clip(throttle_out, 0.0, 1.0)),
                                               brake=float(np.clip(brake_out, 0.0, 1.0)))
     self.ego.apply_control(self._control)
