@@ -67,6 +67,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   simulator_control = simlab_config.get("simulator_control")
   specialist_dataset = simlab_config.get("specialist_dataset")
   specialist_replay_config = simlab_config.get("specialist_replay")
+  actuation_config = simlab_config.get("actuation", {})
   reference_lane_index = int(environment_config.get("reference_lane_index", 0))
   seed = environment_config.get("seed")
   apply_metadrive_patches(arrive_dest_done)
@@ -96,6 +97,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   previous_velocity_heading = None
   previous_simulation_time_s = None
   normalized_steer = 0.0
+  configured_steer_ratio = float(actuation_config.get("steer_ratio", 8.0))
 
   def get_current_lane_info(vehicle):
     _, lane_info, on_lane = vehicle.navigation._get_current_lane(vehicle)
@@ -146,6 +148,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       "simulator_control_mode": "specialist_replay" if specialist_replay is not None else (simulator_control["mode"] if simulator_control is not None else "openpilot"),
       "specialist_replay_normalized_steer": specialist_prediction,
       "simulator_normalized_steer": float(normalized_steer),
+      "configured_steer_ratio": configured_steer_ratio if simulator_control is None and specialist_replay is None else None,
       "applied_steering_angle_deg": float(vehicle.steering * vehicle.MAX_STEERING),
       "actual_yaw_rate_rad_s": yaw_rate,
       "actual_curvature_1pm": yaw_rate / speed_mps if speed_mps > 0.1 else 0.0,
@@ -360,7 +363,6 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
 
   rk = Ratekeeper(100, None)
 
-  steer_ratio = 8
   vc = [0,0]
   steer_angle = gas = 0.0
   latest_road_image = None
@@ -394,7 +396,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     elif specialist_replay is not None:
       steer_metadrive, gas = specialist_controller(latest_road_image)
     else:
-      steer_metadrive = np.clip(steer_angle * 1 / (env.vehicle.MAX_STEERING * steer_ratio), -1, 1)
+      steer_metadrive = np.clip(steer_angle / (env.vehicle.MAX_STEERING * configured_steer_ratio), -1, 1)
     normalized_steer = float(steer_metadrive)
     vc = [steer_metadrive, gas]
 
