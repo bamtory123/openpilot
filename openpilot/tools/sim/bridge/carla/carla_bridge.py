@@ -21,6 +21,9 @@ class CarlaBridge(SimulatorBridge):
     self.test_run = test_run
 
   def spawn_world(self, queue: Queue):
+    capture = self.simlab_config.get("capture", {})
     return CarlaWorld(queue, dual_camera=self.dual_camera, host=self.host, port=self.port,
                       town=self.town, route_asset=self.route_asset,
-                      test_duration=self.test_duration, test_run=self.test_run)
+                      test_duration=self.test_duration, test_run=self.test_run,
+                      capture_dir=capture.get("directory"),
+                      capture_every_n_frames=int(capture.get("every_n_frames", 10)))

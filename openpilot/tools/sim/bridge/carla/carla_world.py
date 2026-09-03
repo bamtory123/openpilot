@@ -8,8 +8,9 @@ from typing import Any
 
 import numpy as np
 
-from openpilot.tools.sim.bridge.carla.route_asset import load_route_asset
 from openpilot.tools.sim.bridge.carla.control import normalized_steer
+from openpilot.tools.sim.bridge.carla.capture import CaptureWriter
+from openpilot.tools.sim.bridge.carla.route_asset import load_route_asset
 from openpilot.tools.sim.bridge.carla.optics import narrow_road_fov_deg
 from openpilot.tools.sim.bridge.common import QueueMessage, QueueMessageType
 from openpilot.tools.sim.lib.camerad import H, W
@@ -31,7 +32,8 @@ class CarlaWorld(World):
   """
 
   def __init__(self, status_q, *, dual_camera: bool, host: str, port: int, town: str,
-               route_asset: str, test_duration: float, test_run: bool):
+               route_asset: str, test_duration: float, test_run: bool,
+               capture_dir: str | None = None, capture_every_n_frames: int = 10):
     super().__init__(dual_camera)
     try:
       import carla
@@ -64,6 +66,7 @@ class CarlaWorld(World):
     self._route_lateral_error_m: float | None = None
     self._control = carla.VehicleControl()
     self._command: dict[str, Any] = {}
+    self._capture = CaptureWriter(capture_dir, capture_every_n_frames, self._emit_capture_event)
     self._spawn_ego()
     self.status_q.put(QueueMessage(QueueMessageType.START_STATUS, {"backend": "carla", "town": town,
                       "route_asset_sha256": self.route.sha256}))
@@ -122,8 +125,13 @@ class CarlaWorld(World):
     self._sensors.append(lane)
 
   def _on_camera(self, image):
+    capture_mono_ns = time.monotonic_ns()
     rgb = np.frombuffer(image.raw_data, dtype=np.uint8).reshape((H, W, 4))[:, :, :3][:, :, ::-1].copy()
-    self._put_latest(self._frames, (image.frame, time.monotonic_ns(), rgb))
+    self._put_latest(self._frames, (image.frame, capture_mono_ns, rgb))
+    self._capture.offer(image.frame, capture_mono_ns, rgb)
+
+  def _emit_capture_event(self, payload: dict[str, Any]) -> None:
+    self.status_q.put(QueueMessage(QueueMessageType.TELEMETRY, payload))
 
   def apply_controls(self, steer_angle, throttle_out, brake_out):
     # openpilot desired curvature/steering-wheel convention is opposite to
@@ -240,6 +248,9 @@ class CarlaWorld(World):
     if self._closed:
       return
     self._closed = True
+    dropped = self._capture.close()
+    if dropped:
+      self._emit_capture_event({"type": "dataset_capture_summary", "dropped": dropped})
     for sensor in reversed(self._sensors):
       try:
         sensor.stop()
