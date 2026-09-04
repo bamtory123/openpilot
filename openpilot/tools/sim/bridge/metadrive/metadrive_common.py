@@ -4,6 +4,15 @@ from metadrive.component.sensors.rgb_camera import RGBCamera
 from panda3d.core import Texture, GraphicsOutput
 
 
+def apply_camera_color_affine(image: np.ndarray, affine: dict | None) -> np.ndarray:
+  """Apply the bounded scenario RGB transform before camera transport."""
+  if affine is None:
+    return image
+  gain = np.asarray(affine["gain_rgb"], dtype=np.float32)
+  bias = np.asarray(affine["bias_rgb"], dtype=np.float32)
+  return np.clip(image.astype(np.float32) * gain + bias, 0, 255).astype(np.uint8)
+
+
 class CopyRamRGBCamera(RGBCamera):
   """Camera which copies its content into RAM during the render process, for faster image grabbing."""
   def __init__(self, *args, **kwargs):

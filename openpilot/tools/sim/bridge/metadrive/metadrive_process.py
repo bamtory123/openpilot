@@ -18,6 +18,7 @@ from openpilot.common.realtime import Ratekeeper
 
 from openpilot.tools.sim.lib.common import vec3
 from openpilot.tools.sim.lib.camerad import W, H
+from openpilot.tools.sim.bridge.metadrive.metadrive_common import apply_camera_color_affine
 from openpilot.tools.sim.bridge.metadrive.specialist_replay import SpecialistReplay
 
 C3_POSITION = Vec3(0.0, 0, 1.22)
@@ -82,8 +83,6 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   camera_fov_deg = float(environment_config.get("camera_fov_deg", 40))
   camera_gamma = float(environment_config.get("camera_gamma", 1.0))
   camera_color_affine = environment_config.get("camera_color_affine")
-  camera_color_gain = np.asarray(camera_color_affine["gain_rgb"], dtype=np.float32) if camera_color_affine is not None else None
-  camera_color_bias = np.asarray(camera_color_affine["bias_rgb"], dtype=np.float32) if camera_color_affine is not None else None
   camera_position = Vec3(*map(float, environment_config.get("camera_position_m", C3_POSITION)))
   camera_hpr = Vec3(*map(float, environment_config.get("camera_hpr_deg", C3_HPR)))
   debug_camera_path = os.environ.get("SIMLAB_CAMERA_DEBUG_PATH")
@@ -342,8 +341,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
       img = img.get() # convert cupy array to numpy
     if camera_gamma != 1.0:
       img = np.rint(np.power(img.astype(np.float32) / 255.0, camera_gamma) * 255.0).astype(np.uint8)
-    if camera_color_gain is not None:
-      img = np.clip(img.astype(np.float32) * camera_color_gain + camera_color_bias, 0, 255).astype(np.uint8)
+    img = apply_camera_color_affine(img, camera_color_affine)
     if cam is env.engine.sensors["rgb_road"]:
       capture_path = metadata_path = None
       if debug_capture_index < len(debug_capture_frames) and rk.frame >= debug_capture_frames[debug_capture_index]:
