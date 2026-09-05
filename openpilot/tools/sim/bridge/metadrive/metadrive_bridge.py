@@ -26,7 +26,7 @@ def curve_block(length, angle=45, direction=0):
     "dir": direction
   }
 
-def create_map(track_size=60, curve_direction=0, route_profile="loop"):
+def create_map(track_size=60, curve_direction=0, route_profile="loop", lane_width=4.5):
   curve_len = track_size * 2
   if route_profile == "serpentine":
     directions = (curve_direction, 1 - curve_direction, 1 - curve_direction, curve_direction)
@@ -37,7 +37,7 @@ def create_map(track_size=60, curve_direction=0, route_profile="loop"):
   return {
     "type": MapGenerateMethod.PG_MAP_FILE,
     "lane_num": 2,
-    "lane_width": 4.5,
+    "lane_width": lane_width,
     "config": [
       None,
       straight_block(track_size),
@@ -94,7 +94,8 @@ class MetaDriveBridge(SimulatorBridge):
       "random_spawn_lane_index": False,
       "map_config": create_map(track_size=int(self.simlab_config.get("environment", {}).get("map_track_size_m", 60)),
                                curve_direction=int(self.simlab_config.get("environment", {}).get("map_curve_direction", 0)),
-                               route_profile="serpentine" if self.simlab_config.get("environment", {}).get("map_id") == "openpilot_serpentine_v1" else "loop"),
+                               route_profile="serpentine" if self.simlab_config.get("environment", {}).get("map_id") == "openpilot_serpentine_v1" else "loop",
+                               lane_width=float(self.simlab_config.get("environment", {}).get("map_lane_width_m", 4.5))),
       "decision_repeat": 1,
       "physics_world_step_size": self.TICKS_PER_FRAME/100,
       "preload_models": False,

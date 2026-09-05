@@ -1,9 +1,11 @@
+import json
+import os
 import signal
 import threading
 import functools
 import time
 import numpy as np
-from openpilot.common.transformations.camera import DEVICE_CAMERAS
+from openpilot.common.transformations.camera import DEVICE_CAMERAS, get_view_frame_from_calib_frame
 
 from collections import namedtuple
 from enum import Enum
@@ -36,6 +38,32 @@ def rk_loop(function, hz, exit_event: threading.Event):
     rk.keep_time()
 
 
+def build_model_debug_snapshot(model, calibration, camera_config, requested_camera_source_frame_id: int,
+                               bridge_frame: int) -> dict:
+  def points(value):
+    return [[float(x), float(y), float(z)] for x, y, z in zip(value.x, value.y, value.z, strict=True)]
+
+  rpy = list(calibration.rpyCalib) if len(calibration.rpyCalib) == 3 else [0.0, 0.0, 0.0]
+  height = list(calibration.height)
+  camera = camera_config.narrow_road
+  return {
+    "schema_version": 1,
+    "scope": "analysis_only_model_projection_not_runtime_control_or_accuracy",
+    "requested_camera_source_frame_id": requested_camera_source_frame_id,
+    "bridge_frame": bridge_frame,
+    "model_frame_id": int(model.frameId),
+    "projection": {
+      "intrinsic": camera.intrinsics.tolist(),
+      "view_from_calib": get_view_frame_from_calib_frame(*rpy, 0.0)[:, :3].tolist(),
+      "camera_height_m": float(height[0]) if height else 1.22,
+      "calibration_rpy_rad": [float(value) for value in rpy],
+    },
+    "path": points(model.position),
+    "lane_lines": [points(lane) for lane in model.laneLines],
+    "lane_line_probabilities": [float(value) for value in model.laneLineProbs],
+  }
+
+
 class SimulatorBridge(ABC):
   TICKS_PER_FRAME = 5
 
@@ -49,6 +77,12 @@ class SimulatorBridge(ABC):
     self.dual_camera = dual_camera
     self.high_quality = high_quality
     self.simlab_config = simlab_config or {}
+    capture_frames = os.environ.get("SIMLAB_MODEL_DEBUG_SOURCE_FRAME_IDS", "")
+    self.model_debug_capture_frames = [int(value) for value in capture_frames.split(",") if value]
+    self.model_debug_capture_dir = os.environ.get("SIMLAB_MODEL_DEBUG_CAPTURE_DIR")
+    if self.model_debug_capture_frames and not self.model_debug_capture_dir:
+      raise ValueError("SIMLAB_MODEL_DEBUG_CAPTURE_DIR is required when model source frames are configured")
+    self.model_debug_capture_index = 0
 
     self._exit_event: threading.Event | None = None
     self._threads = []
@@ -231,6 +265,16 @@ Ignition: {self.simulator_state.ignition} Engaged: {self.simulator_state.is_enga
         device_type = str(self.simulated_car.sm['deviceState'].deviceType)
         camera_sensor = str(self.simulated_car.sm['narrowRoadCameraState'].sensor)
         camera_config = DEVICE_CAMERAS.get((device_type, camera_sensor))
+        if (camera_config is not None and self.model_debug_capture_index < len(self.model_debug_capture_frames)
+            and model.frameId >= self.model_debug_capture_frames[self.model_debug_capture_index]):
+          requested_frame_id = self.model_debug_capture_frames[self.model_debug_capture_index]
+          snapshot = build_model_debug_snapshot(model, calibration, camera_config, requested_frame_id, self.rk.frame)
+          capture_dir = os.path.abspath(self.model_debug_capture_dir)
+          os.makedirs(capture_dir, exist_ok=True)
+          with open(os.path.join(capture_dir, f"model-source-frame-{model.frameId:06d}.json"), "w", encoding="utf-8") as stream:
+            json.dump(snapshot, stream, indent=2, sort_keys=True)
+            stream.write("\n")
+          self.model_debug_capture_index += 1
         left_lane = model.laneLines[1] if len(model.laneLines) > 1 else None
         right_lane = model.laneLines[2] if len(model.laneLines) > 2 else None
         left_lane_prob = model.laneLineProbs[1] if len(model.laneLineProbs) > 1 else None

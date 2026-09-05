@@ -1,7 +1,11 @@
+import json
+import os
+from pathlib import Path
 import time
 
 from openpilot.cereal import log
 import openpilot.cereal.messaging as messaging
+from PIL import Image
 
 from openpilot.common.realtime import DT_DMON
 from openpilot.tools.sim.lib.camerad import Camerad
@@ -24,6 +28,11 @@ class SimulatedSensors:
     config = camera_transport_config or {}
     self._fault_delay_ms = int(config.get("target_delay_ms", 0))
     self._camera_frame_ids = {"road": 0, "wide": 0}
+    source_frames = os.environ.get("SIMLAB_CAMERA_DEBUG_SOURCE_FRAME_IDS", "")
+    self._debug_source_frame_ids = {int(value) for value in source_frames.split(",") if value}
+    self._debug_capture_dir = os.environ.get("SIMLAB_CAMERA_DEBUG_SOURCE_DIR")
+    if self._debug_source_frame_ids and not self._debug_capture_dir:
+      raise ValueError("SIMLAB_CAMERA_DEBUG_SOURCE_DIR is required when camera source frames are configured")
     self.camera_transport = CameraTransportDelay(
       self._publish_camera_frame, camera_telemetry,
       target_delay_ms=0, capacity_frames=int(config.get("queue_capacity_frames", 8)),
@@ -144,6 +153,18 @@ class SimulatedSensors:
 
     road_id = self._camera_frame_ids["road"]
     self._camera_frame_ids["road"] += 1
+    if road_id in self._debug_source_frame_ids:
+      capture_dir = Path(self._debug_capture_dir)
+      capture_dir.mkdir(parents=True, exist_ok=True)
+      image_path = capture_dir / f"camera-source-frame-{road_id:06d}.png"
+      Image.fromarray(road_rgb).save(image_path)
+      (capture_dir / f"{image_path.name}.json").write_text(json.dumps({
+        "schema_version": 1,
+        "scope": "analysis_only_exact_pre_nv12_model_input",
+        "camera": "road",
+        "source_frame_id": road_id,
+        "capture_mono_ns": capture_mono_ns,
+      }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     self.camera_transport.enqueue(camera="road", source_frame_id=road_id, capture_mono_ns=capture_mono_ns,
                                   yuv=self.camerad.rgb_to_yuv(road_rgb))
     if wide_rgb is not None:

@@ -33,3 +33,8 @@ class TestMetaDriveBridge(TestSimBridgeBase):
     assert create_map is not None
     curves = [block["dir"] for block in create_map(60, 1)["config"] if block and block["id"] == "C"]
     assert curves == [1, 1, 1, 1]
+
+  def test_lane_width_defaults_to_frozen_contract_and_accepts_diagnostic(self):
+    assert create_map is not None
+    assert create_map()["lane_width"] == 4.5
+    assert create_map(lane_width=3.7)["lane_width"] == 3.7
