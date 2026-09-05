@@ -13,6 +13,7 @@ from metadrive.engine.core.engine_core import EngineCore
 from metadrive.engine.core.image_buffer import ImageBuffer
 from metadrive.envs.metadrive_env import MetaDriveEnv
 from metadrive.obs.image_obs import ImageObservation
+from metadrive.constants import PGDrivableAreaProperty
 
 from openpilot.common.realtime import Ratekeeper
 
@@ -34,7 +35,7 @@ def world_signed_angle(forward: np.ndarray, target: np.ndarray) -> float:
   return math.atan2(float(forward[0] * target[1] - forward[1] * target[0]), float(np.dot(forward, target)))
 
 
-def apply_metadrive_patches(arrive_dest_done=True):
+def apply_metadrive_patches(arrive_dest_done=True, road_marking_profile=None):
   # By default, metadrive won't try to use cuda images unless it's used as a sensor for vehicles, so patch that in
   def add_image_sensor_patched(self, name: str, cls, args):
     if self.global_config["image_on_cuda"]:# and name == self.global_config["vehicle_config"]["image_source"]:
@@ -58,6 +59,9 @@ def apply_metadrive_patches(arrive_dest_done=True):
 
   if not arrive_dest_done:
     MetaDriveEnv._is_arrive_destination = arrive_destination_patch
+  if road_marking_profile == "mutcd_highway_v1":
+    PGDrivableAreaProperty.STRIPE_LENGTH = 3.048
+    PGDrivableAreaProperty.STRIPE_GAP = 9.144
 
 def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera_array, image_lock,
                       controls_recv: Connection, simulation_state_send: Connection, vehicle_state_send: Connection,
@@ -71,7 +75,8 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   actuation_config = simlab_config.get("actuation", {})
   reference_lane_index = int(environment_config.get("reference_lane_index", 0))
   seed = environment_config.get("seed")
-  apply_metadrive_patches(arrive_dest_done)
+  road_marking_profile = environment_config.get("road_marking_profile")
+  apply_metadrive_patches(arrive_dest_done, road_marking_profile)
 
   road_image = np.frombuffer(camera_array.get_obj(), dtype=np.uint8).reshape((H, W, 3))
   if dual_camera:
@@ -361,6 +366,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
                        "camera_fov_deg": camera_fov_deg, "camera_focal_length_px": W / (2.0 * math.tan(math.radians(camera_fov_deg) / 2.0)),
                        "camera_position_m": list(map(float, camera_position)),
                        "camera_hpr_deg": list(map(float, camera_hpr)), "camera_gamma": camera_gamma,
+                       "road_marking_profile": road_marking_profile or "metadrive_default",
                        "camera_color_affine": camera_color_affine,
                        "static_obstacle_bbox_xyxy_px": visual_proxy_bbox(cam.get_cam())}, handle, sort_keys=True)
     return img
