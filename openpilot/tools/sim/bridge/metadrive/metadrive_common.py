@@ -13,6 +13,15 @@ def apply_camera_color_affine(image: np.ndarray, affine: dict | None) -> np.ndar
   return np.clip(image.astype(np.float32) * gain + bias, 0, 255).astype(np.uint8)
 
 
+def apply_texture_luma_gain(texture: Texture, gain: float) -> Texture:
+  """Scale an RGB texture uniformly while preserving the existing texture object."""
+  if gain == 1.0:
+    return texture
+  image = np.frombuffer(texture.getRamImage().getData(), dtype=np.uint8).copy()
+  texture.setRamImage(np.rint(image.astype(np.float32) * gain).clip(0, 255).astype(np.uint8))
+  return texture
+
+
 class CopyRamRGBCamera(RGBCamera):
   """Camera which copies its content into RAM during the render process, for faster image grabbing."""
   def __init__(self, *args, **kwargs):

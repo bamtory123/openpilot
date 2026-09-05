@@ -19,7 +19,7 @@ from openpilot.common.realtime import Ratekeeper
 
 from openpilot.tools.sim.lib.common import vec3
 from openpilot.tools.sim.lib.camerad import W, H
-from openpilot.tools.sim.bridge.metadrive.metadrive_common import apply_camera_color_affine
+from openpilot.tools.sim.bridge.metadrive.metadrive_common import apply_camera_color_affine, apply_texture_luma_gain
 from openpilot.tools.sim.bridge.metadrive.specialist_replay import SpecialistReplay
 
 C3_POSITION = Vec3(0.0, 0, 1.22)
@@ -88,6 +88,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
   camera_fov_deg = float(environment_config.get("camera_fov_deg", 40))
   camera_gamma = float(environment_config.get("camera_gamma", 1.0))
   camera_color_affine = environment_config.get("camera_color_affine")
+  road_texture_gain = float(environment_config.get("road_texture_gain", 1.0))
   camera_position = Vec3(*map(float, environment_config.get("camera_position_m", C3_POSITION)))
   camera_hpr = Vec3(*map(float, environment_config.get("camera_hpr_deg", C3_HPR)))
   debug_camera_path = os.environ.get("SIMLAB_CAMERA_DEBUG_PATH")
@@ -309,6 +310,10 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
     return lane_idx_prev
 
   lane_idx_prev = reset()
+  if road_texture_gain != 1.0:
+    terrain = env.engine.terrain
+    apply_texture_luma_gain(terrain.road_texture, road_texture_gain)
+    terrain.mesh_terrain.set_shader_input("road_tex", terrain.road_texture)
   env.engine.sensors["rgb_road"].get_lens().setFov(camera_fov_deg)
   start_time = None
   previous_speed = 0.0
@@ -367,6 +372,7 @@ def metadrive_process(dual_camera: bool, config: dict, camera_array, wide_camera
                        "camera_position_m": list(map(float, camera_position)),
                        "camera_hpr_deg": list(map(float, camera_hpr)), "camera_gamma": camera_gamma,
                        "road_marking_profile": road_marking_profile or "metadrive_default",
+                       "road_texture_gain": road_texture_gain,
                        "camera_color_affine": camera_color_affine,
                        "static_obstacle_bbox_xyxy_px": visual_proxy_bbox(cam.get_cam())}, handle, sort_keys=True)
     return img
